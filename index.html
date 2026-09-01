@@ -82,18 +82,27 @@
 
   #mobileControls { position:absolute; inset:0; z-index:22; pointer-events:none; }
   #stickBase {
-    position:absolute; left:26px; bottom:26px; width:120px; height:120px; border-radius:50%;
+    position:absolute; left:30px; bottom:30px; width:160px; height:160px; border-radius:50%;
     background:rgba(20,40,50,0.35); border:2px solid rgba(140,210,230,0.5);
     pointer-events:auto; touch-action:none;
   }
   #stickKnob {
-    position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%;
+    position:absolute; left:47px; top:47px; width:66px; height:66px; border-radius:50%;
     background:rgba(140,210,230,0.75); transition:transform .02s linear;
   }
+  #stickBaseR {
+    position:absolute; right:30px; bottom:30px; width:160px; height:160px; border-radius:50%;
+    background:rgba(50,25,25,0.3); border:2px solid rgba(255,150,150,0.4);
+    pointer-events:auto; touch-action:none;
+  }
+  #stickKnobR {
+    position:absolute; left:47px; top:47px; width:66px; height:66px; border-radius:50%;
+    background:rgba(255,150,150,0.65); transition:transform .02s linear;
+  }
   #shootBtn {
-    position:absolute; right:32px; bottom:38px; width:88px; height:88px; border-radius:50%;
+    position:absolute; right:56px; bottom:210px; width:120px; height:120px; border-radius:50%;
     background:rgba(220,60,60,0.55); border:2px solid rgba(255,140,140,0.7);
-    color:#fff; font-size:14px; font-weight:700; letter-spacing:1px;
+    color:#fff; font-size:16px; font-weight:700; letter-spacing:1px;
     display:flex; align-items:center; justify-content:center;
     pointer-events:auto; touch-action:none; user-select:none;
   }
@@ -156,8 +165,9 @@
 <div id="storyBox"><div class="who" id="storyWho"></div><div id="storyText"></div></div>
 
 <div id="mobileControls" class="hidden">
-  <div id="mobileHint">왼쪽 스틱: 이동 · 오른쪽 화면 드래그: 시점 · 오른쪽 버튼: 사격</div>
+  <div id="mobileHint">왼쪽 스틱: 이동 · 오른쪽 스틱: 시점 · 버튼: 사격</div>
   <div id="stickBase"><div id="stickKnob"></div></div>
+  <div id="stickBaseR"><div id="stickKnobR"></div></div>
   <div id="shootBtn">FIRE</div>
 </div>
 
@@ -455,7 +465,7 @@
   let dragLastX = 0, dragLastY = 0;
   let bobPhase = 0;
   const joystick = { x:0, y:0 };
-  let lookTouchId = null, lookLastX = 0, lookLastY = 0;
+  const lookStick = { x:0, y:0 };
   const player = { height:1.7, speed:5.2, health:100, ammoInClip:12, radius:0.4 };
   const keys = {};
   const velocity = new THREE.Vector3();
@@ -1036,6 +1046,17 @@
     camera.rotation.x = pitch;
   }
 
+  function updateLookStick(dt){
+    if(lookStick.x === 0 && lookStick.y === 0) return;
+    const rate = 2.6; // max radians per second at full stick deflection
+    yaw -= lookStick.x * rate * dt;
+    pitch -= lookStick.y * rate * dt;
+    pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+  }
+
   function onMouseMove(e){
     if(!isDragging) return;
     applyLookDelta(e.clientX - dragLastX, e.clientY - dragLastY, 0.0032);
@@ -1070,70 +1091,58 @@
   function setupMobileControls(){
     document.getElementById('mobileControls').classList.remove('hidden');
 
-    const stickBase = document.getElementById('stickBase');
-    const stickKnob = document.getElementById('stickKnob');
-    let stickTouchId = null;
-    const stickRadius = 50;
+    function bindStick(baseEl, knobEl, radius, onMove, onEnd){
+      let touchId = null;
+      baseEl.addEventListener('touchstart', (e)=>{
+        const t = e.changedTouches[0];
+        touchId = t.identifier;
+        e.preventDefault();
+      }, { passive:false });
 
-    stickBase.addEventListener('touchstart', (e)=>{
-      const t = e.changedTouches[0];
-      stickTouchId = t.identifier;
-      e.preventDefault();
-    }, { passive:false });
-
-    document.addEventListener('touchmove', (e)=>{
-      for(const t of e.changedTouches){
-        if(t.identifier === stickTouchId){
-          const rect = stickBase.getBoundingClientRect();
+      document.addEventListener('touchmove', (e)=>{
+        for(const t of e.changedTouches){
+          if(t.identifier !== touchId) continue;
+          const rect = baseEl.getBoundingClientRect();
           const cx = rect.left + rect.width/2;
           const cy = rect.top + rect.height/2;
           let dx = t.clientX - cx;
           let dy = t.clientY - cy;
-          const dist = Math.min(stickRadius, Math.hypot(dx, dy));
+          const dist = Math.min(radius, Math.hypot(dx, dy));
           const angle = Math.atan2(dy, dx);
           dx = Math.cos(angle) * dist;
           dy = Math.sin(angle) * dist;
-          stickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-          joystick.x = dx / stickRadius;
-          joystick.y = -dy / stickRadius;
+          knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+          onMove(dx / radius, dy / radius);
         }
-        if(t.identifier === lookTouchId){
-          const dx = t.clientX - lookLastX;
-          const dy = t.clientY - lookLastY;
-          applyLookDelta(-dx, -dy, 0.0032);
-          lookLastX = t.clientX;
-          lookLastY = t.clientY;
-        }
-      }
-      e.preventDefault();
-    }, { passive:false });
+      }, { passive:false });
 
-    document.addEventListener('touchend', (e)=>{
-      for(const t of e.changedTouches){
-        if(t.identifier === stickTouchId){
-          stickTouchId = null;
-          stickKnob.style.transform = 'translate(0px, 0px)';
-          joystick.x = 0; joystick.y = 0;
+      document.addEventListener('touchend', (e)=>{
+        for(const t of e.changedTouches){
+          if(t.identifier !== touchId) continue;
+          touchId = null;
+          knobEl.style.transform = 'translate(0px, 0px)';
+          onEnd();
         }
-        if(t.identifier === lookTouchId){
-          lookTouchId = null;
-        }
-      }
-    });
+      });
+    }
 
-    // Right half of screen (outside joystick/buttons) = look drag
-    document.addEventListener('touchstart', (e)=>{
-      if(!gameActive) return;
-      for(const t of e.changedTouches){
-        if(t.identifier === stickTouchId) continue;
-        if(t.clientX < window.innerWidth * 0.42) continue; // reserve left side for joystick
-        if(lookTouchId === null){
-          lookTouchId = t.identifier;
-          lookLastX = t.clientX;
-          lookLastY = t.clientY;
-        }
-      }
-    }, { passive:false });
+    // Left stick: movement
+    bindStick(
+      document.getElementById('stickBase'),
+      document.getElementById('stickKnob'),
+      47,
+      (nx, ny)=>{ joystick.x = nx; joystick.y = -ny; },
+      ()=>{ joystick.x = 0; joystick.y = 0; }
+    );
+
+    // Right stick (C-stick): look/aim
+    bindStick(
+      document.getElementById('stickBaseR'),
+      document.getElementById('stickKnobR'),
+      47,
+      (nx, ny)=>{ lookStick.x = nx; lookStick.y = ny; },
+      ()=>{ lookStick.x = 0; lookStick.y = 0; }
+    );
 
     document.getElementById('shootBtn').addEventListener('touchstart', (e)=>{
       shoot();
@@ -1195,6 +1204,7 @@
     const dt = Math.min(0.05, (now - lastTime)/1000);
     lastTime = now;
     if(gameActive){
+      updateLookStick(dt);
       updateMovement(dt);
       updateEnemies(dt);
     }
