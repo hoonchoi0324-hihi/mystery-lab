@@ -1,1229 +1,1564 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<title>SILENT PROTOCOL — 1인칭 스토리 슈팅</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>3D 전투기 프로토타입</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { width:100%; height:100%; overflow:hidden; background:#000; font-family:'Segoe UI', 'Malgun Gothic', sans-serif; }
-  canvas { display:block; }
-
-  #crosshair {
-    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    width:22px; height:22px; pointer-events:none; z-index:20;
-  }
-  #crosshair::before, #crosshair::after {
-    content:''; position:absolute; background:#e8ffe8; opacity:0.85;
-  }
-  #crosshair::before { left:50%; top:0; width:2px; height:100%; transform:translateX(-1px); }
-  #crosshair::after { top:50%; left:0; height:2px; width:100%; transform:translateY(-1px); }
-  #crosshair.hit::before, #crosshair.hit::after { background:#ff4444; }
-
-  #hud {
-    position:absolute; bottom:20px; left:20px; z-index:20; color:#d5ffe0;
-    text-shadow:0 0 6px rgba(0,0,0,0.9);
-    user-select:none; pointer-events:none;
-  }
-  #hud .row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
-  #healthBarWrap { width:220px; height:16px; border:1px solid #2c6b3f; background:rgba(0,0,0,0.4); }
-  #healthBar { height:100%; width:100%; background:linear-gradient(90deg,#3ddc74,#1e8f45); transition:width .15s; }
-  #ammoText { font-size:15px; letter-spacing:1px; }
-
-  #topRight {
-    position:absolute; top:20px; right:24px; z-index:20; color:#d5ffe0;
-    text-align:right; text-shadow:0 0 6px rgba(0,0,0,0.9); user-select:none; pointer-events:none;
-  }
-  #topRight .wave { font-size:20px; font-weight:600; letter-spacing:1px; }
-  #topRight .score { font-size:14px; opacity:0.85; margin-top:2px; }
-
-  #hitmarkerFlash {
-    position:absolute; inset:0; z-index:15; pointer-events:none;
-    background:radial-gradient(circle, rgba(255,0,0,0.0) 60%, rgba(255,0,0,0.35) 100%);
-    opacity:0; transition:opacity .1s;
-  }
-
-  #storyBox {
-    position:absolute; bottom:70px; left:50%; transform:translateX(-50%);
-    max-width:640px; width:88%; z-index:25;
-    background:rgba(6,14,10,0.82); border:1px solid #2c6b3f;
-    color:#dfffe6; padding:16px 20px; font-size:15px; line-height:1.6;
-    display:none; box-shadow:0 0 24px rgba(0,0,0,0.6); pointer-events:none;
-  }
-  #storyBox .who { color:#7be89b; font-weight:700; margin-bottom:6px; font-size:13px; letter-spacing:1px; }
-
-  .overlay {
-    position:absolute; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
-    flex-direction:column; background:radial-gradient(ellipse at center, #0a1a10 0%, #000 100%);
-    color:#e8ffe8; text-align:center; padding:20px;
-  }
-  .overlay h1 { font-size:42px; letter-spacing:6px; color:#7be89b; text-shadow:0 0 20px rgba(80,255,140,0.5); margin-bottom:18px; }
-  .overlay h2 { font-size:26px; letter-spacing:3px; margin-bottom:14px; }
-  .overlay p { max-width:600px; line-height:1.8; font-size:15px; color:#bcd8c4; margin-bottom:26px; }
-  .btn {
-    background:#153d24; border:1px solid #4fbf78; color:#d5ffe0; padding:14px 34px;
-    font-size:16px; letter-spacing:2px; cursor:pointer; transition:all .15s;
-  }
-  .btn:hover { background:#1f5432; box-shadow:0 0 18px rgba(80,255,140,0.4); }
-  .hidden { display:none !important; }
-
-  #damageVignette {
-    position:absolute; inset:0; z-index:14; pointer-events:none;
-    box-shadow: inset 0 0 0 0 rgba(255,0,0,0); transition:box-shadow .2s;
-  }
-
-  #ambientVignette {
-    position:absolute; inset:0; z-index:5; pointer-events:none;
-    box-shadow: inset 0 0 140px 40px rgba(10,20,30,0.35);
-  }
-  #scanlines {
-    position:absolute; inset:0; z-index:6; pointer-events:none; opacity:0.06;
-    background:repeating-linear-gradient(0deg, #fff 0px, #fff 1px, transparent 1px, transparent 3px);
-  }
-
-  #mobileControls { position:absolute; inset:0; z-index:22; pointer-events:none; }
-  #stickBase {
-    position:absolute; left:30px; bottom:30px; width:160px; height:160px; border-radius:50%;
-    background:rgba(20,40,50,0.35); border:2px solid rgba(140,210,230,0.5);
-    pointer-events:auto; touch-action:none;
-  }
-  #stickKnob {
-    position:absolute; left:47px; top:47px; width:66px; height:66px; border-radius:50%;
-    background:rgba(140,210,230,0.75); transition:transform .02s linear;
-  }
-  #stickBaseR {
-    position:absolute; right:30px; bottom:30px; width:160px; height:160px; border-radius:50%;
-    background:rgba(50,25,25,0.3); border:2px solid rgba(255,150,150,0.4);
-    pointer-events:auto; touch-action:none;
-  }
-  #stickKnobR {
-    position:absolute; left:47px; top:47px; width:66px; height:66px; border-radius:50%;
-    background:rgba(255,150,150,0.65); transition:transform .02s linear;
-  }
-  #shootBtn {
-    position:absolute; right:56px; bottom:210px; width:120px; height:120px; border-radius:50%;
-    background:rgba(220,60,60,0.55); border:2px solid rgba(255,140,140,0.7);
-    color:#fff; font-size:16px; font-weight:700; letter-spacing:1px;
-    display:flex; align-items:center; justify-content:center;
-    pointer-events:auto; touch-action:none; user-select:none;
-  }
-  #mobileHint {
-    position:absolute; top:64px; left:50%; transform:translateX(-50%);
-    color:#dfeeff; font-size:12px; opacity:0.75; text-shadow:0 0 6px rgba(0,0,0,0.8);
-    pointer-events:none;
-  }
-
-  .cutscene {
-    position:absolute; inset:0; z-index:60;
-    background:#000; opacity:0; transition:opacity .7s ease;
-    display:flex; align-items:center; justify-content:center;
-    cursor:pointer;
-  }
-  .cutscene.show { opacity:1; }
-  .cutscene-bar { position:absolute; left:0; right:0; height:13vh; background:#000; z-index:2; }
-  .cutscene-bar.top { top:0; }
-  .cutscene-bar.bottom { bottom:0; }
-  .cutscene-content {
-    position:relative; z-index:3; max-width:680px; padding:0 32px; text-align:center;
-    color:#e8fff0; opacity:0; transform:translateY(10px);
-    transition:opacity .8s ease .3s, transform .8s ease .3s;
-  }
-  .cutscene.show .cutscene-content { opacity:1; transform:translateY(0); }
-  .cutscene-art {
-    width:220px; height:220px; margin:0 auto 22px; overflow:hidden;
-    filter:drop-shadow(0 0 18px rgba(60,255,150,0.3));
-  }
-  .cutscene-art canvas { width:100%; height:100%; display:block; }
-  .cutscene-title {
-    font-size:13px; letter-spacing:5px; color:#7be89b; text-transform:uppercase;
-    margin-bottom:20px; opacity:0.85;
-  }
-  .cutscene-text { font-size:19px; line-height:1.9; }
-  .cutscene-hint { margin-top:38px; font-size:11px; opacity:0.45; letter-spacing:2px; }
-</style>
+*{box-sizing:border-box;user-select:none;-webkit-user-select:none;touch-action:none}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#04060f;font-family:monospace}
+canvas{position:fixed;inset:0;display:block}
+#hud{position:fixed;left:10px;top:8px;color:#cfe8ff;font-weight:bold;font-size:13px;text-shadow:1px 1px #000;z-index:3;line-height:1.5}
+#pad{position:fixed;left:0;right:0;bottom:0;height:150px;z-index:5}
+.joy{position:absolute;left:22px;bottom:16px;width:112px;height:112px}
+.joy-base{position:absolute;inset:0;border-radius:50%;background:#22242c;box-shadow:inset 0 -6px #16171c, inset 0 4px #45474f,0 3px 7px #0006}
+.joy-knob{position:absolute;left:31px;top:31px;width:50px;height:50px;border-radius:50%;background:#1c1d22;box-shadow:inset 0 -5px #101114, inset 0 3px #3c3e46,0 3px 6px #0007;transform:translate(0,0);will-change:transform}
+#brand{position:fixed;right:12px;bottom:16px;color:#5a7a9a;font-size:11px;letter-spacing:2px;z-index:4}
+.ab{position:absolute;right:26px;bottom:38px;width:78px;height:78px;z-index:5}
+.ab button{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:50%;background:#8d1f49;color:#f7dbe7;font-size:20px;font-weight:bold;font-family:monospace;box-shadow:inset 0 -6px #5d1230,0 3px 8px #0007}
+.ab button.on{filter:brightness(1.6)}
+#hitFlash{position:fixed;inset:0;background:#ff2d3d;opacity:0;pointer-events:none;z-index:6;transition:opacity .12s linear}
+#purpleWash{position:fixed;inset:0;background:#8a2be2;opacity:0;pointer-events:none;z-index:7;transition:opacity 1.1s ease}
+#bossBar{position:fixed;left:50%;top:10px;transform:translateX(-50%);width:min(420px,72vw);z-index:3;display:none}
+#bossBar .lbl{color:#ffb0c0;font-size:11px;font-weight:bold;letter-spacing:2px;text-shadow:1px 1px #000;margin-bottom:3px}
+#bossBar .track{height:12px;border-radius:3px;background:#32101c;overflow:hidden;box-shadow:0 2px 4px #0007}
+#bossBar .fill{height:100%;width:100%;background:linear-gradient(90deg,#ff3152,#ff8a3d);transition:width .12s linear}
+#bossMsg{position:fixed;left:50%;top:36%;transform:translateX(-50%);color:#fff;font-size:28px;font-weight:bold;text-shadow:2px 2px #000,0 0 18px #ff3152;z-index:4;opacity:0;transition:opacity .3s;white-space:nowrap}
+#hpBar{position:fixed;left:10px;top:52px;width:190px;z-index:3}
+#hpBar .lbl{color:#bfffd8;font-size:11px;font-weight:bold;letter-spacing:2px;text-shadow:1px 1px #000;margin-bottom:3px}
+#hpBar .track{height:10px;border-radius:3px;background:#0a2415;overflow:hidden;box-shadow:0 2px 4px #0007}
+#hpBar .fill{height:100%;width:100%;background:linear-gradient(90deg,#3dffa0,#bfff5a);transition:width .12s linear}
+#commBox{position:fixed;left:50%;bottom:170px;transform:translate(-50%,20px);display:flex;align-items:center;gap:10px;background:#0d1424e6;border:2px solid #3a5a8a;border-radius:10px;padding:8px 14px;z-index:6;opacity:0;transition:opacity .25s,transform .25s;max-width:88vw;pointer-events:none}
+#commBox.show{opacity:1;transform:translate(-50%,0)}
+#commBox .face{width:34px;height:34px;border-radius:50%;background:#7fe0ff;flex:0 0 auto;position:relative;box-shadow:0 0 8px #7fe0ff}
+#commBox .face::before,#commBox .face::after{content:'';position:absolute;width:5px;height:5px;background:#04060f;border-radius:50%;top:13px}
+#commBox .face::before{left:9px}
+#commBox .face::after{right:9px}
+#commBox .line{color:#dff2ff;font-size:12px;font-family:monospace;white-space:nowrap}
+#commBox .morse{color:#7fe0ff;font-size:11px;font-family:monospace;letter-spacing:2px;opacity:.85;margin-top:2px}
+#gameOverMsg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#000a;z-index:8;color:#fff;font-size:30px;font-weight:bold;text-shadow:2px 2px #000}
+#gameOverMsg span{font-size:14px;opacity:.7;font-weight:normal}
+#endingMsg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#0007;z-index:9;color:#fff;font-size:34px;font-weight:bold;text-shadow:2px 2px #000,0 0 22px #c98bff}
+#endingMsg span{font-size:14px;opacity:.75;font-weight:normal}
+#bombFlash{position:fixed;inset:0;background:#fff6c9;opacity:0;pointer-events:none;z-index:7;transition:opacity .25s ease}
+.bombBtn{position:absolute;right:30px;bottom:128px;width:66px;height:66px;z-index:5}
+.bombBtn button{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:50%;background:#c9871f;color:#fff3d6;font-size:11px;font-weight:bold;font-family:monospace;box-shadow:inset 0 -6px #855a12,0 3px 8px #0007}
+.bombBtn button.on{filter:brightness(1.6)}
+.bombBtn button:disabled{filter:grayscale(.7) brightness(.6)}
+#bombPips{position:fixed;left:10px;top:70px;z-index:3;display:flex;gap:4px}
+#bombPips .pip{width:11px;height:11px;border-radius:50%;background:#3a2a10;border:1px solid #c9871f}
+#bombPips .pip.on{background:#ffcf5a;box-shadow:0 0 5px #ffcf5a}
+#shipSelect{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:#04060fee;z-index:10}
+#shipSelect h1{color:#cfe8ff;font-size:18px;letter-spacing:3px;margin:0 0 4px}
+.shipRow{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;padding:0 12px}
+.shipCard{width:150px;background:#10131f;border:2px solid #263047;border-radius:10px;padding:12px;text-align:center;color:#cfe8ff;cursor:pointer;transition:transform .15s, border-color .15s}
+.shipCard:hover,.shipCard.picked{border-color:#7fe0ff;transform:translateY(-4px)}
+.shipCard .swatch{width:44px;height:44px;border-radius:50%;margin:0 auto 8px;box-shadow:0 0 12px currentColor}
+.shipCard .nm{font-weight:bold;font-size:14px;margin-bottom:4px}
+.shipCard .ds{font-size:11px;opacity:.75;line-height:1.5}
+#startScreen{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:20px;z-index:11}
+#startScreen h1{color:#eaf6ff;font-size:26px;letter-spacing:6px;text-shadow:0 0 18px #7fe0ff,0 0 40px #3d8fff;margin:0}
+#startScreen .sub{color:#5a7a9a;font-size:11px;letter-spacing:3px}
+#startScreen .push{color:#ffe9a8;font-size:15px;letter-spacing:3px;text-shadow:1px 1px #000,0 0 10px #ffcf5a;animation:blinkPush 1s steps(1) infinite}
+@keyframes blinkPush{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+#prologue{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:11;background:#04060fcc}
+#prologue .crawl{max-width:540px;padding:0 24px;text-align:center}
+#prologue p{color:#cfe8ff;font-size:15px;line-height:1.9;margin:0 0 20px;opacity:0;text-shadow:1px 1px #000;transition:opacity 1s ease}
+#prologue p.show{opacity:1}
+#prologue p.tap{display:none;color:#ffe9a8;font-size:14px;letter-spacing:2px;margin-top:22px;animation:blinkPush 1s steps(1) infinite}
+#prologue p.tap.show{display:block}
+#langSelect{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;z-index:12;background:#04060f}
+#langSelect h1{color:#eaf6ff;font-size:20px;letter-spacing:4px;margin:0;text-shadow:0 0 14px #7fe0ff}
+.langRow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:0 12px}
+.langCard{width:120px;background:#10131f;border:2px solid #263047;border-radius:10px;padding:16px 10px;text-align:center;color:#cfe8ff;cursor:pointer;font-size:14px;font-weight:bold;transition:transform .15s,border-color .15s}
+.langCard:hover{border-color:#7fe0ff;transform:translateY(-4px)}</style>
 </head>
 <body>
-
-<div id="crosshair"></div>
-<div id="hitmarkerFlash"></div>
-<div id="ambientVignette"></div>
-<div id="scanlines"></div>
-<div id="damageVignette"></div>
-
-<div id="hud">
-  <div class="row">
-    <div id="healthBarWrap"><div id="healthBar"></div></div>
-    <span id="healthText">100</span>
+<div id="hud">3D FIGHTER · PROTOTYPE<br><span id="tip" style="opacity:.6;font-weight:normal">조이스틱 조종 · A버튼(스페이스) 발사</span></div>
+<div id="brand">PIXEL FIGHTER · 3D TEST</div>
+<div id="hitFlash"></div>
+<div id="purpleWash"></div>
+<div id="bossBar"><div class="lbl">BOSS</div><div class="track"><div class="fill" id="bossFill"></div></div></div>
+<div id="bossMsg">BOSS!</div>
+<div id="hpBar"><div class="lbl">HP</div><div class="track"><div class="fill" id="hpFill"></div></div></div>
+<div id="commBox"><div class="face"></div><div class="lineWrap"><div class="line" id="commLine"></div><div class="morse" id="commMorse"></div></div></div>
+<div id="gameOverMsg"><div id="gameOverTitle">GAME OVER</div><span id="gameOverSub"></span></div>
+<div id="endingMsg"><div id="gameClearTitle">GAME CLEAR</div><span id="gameClearSub"></span></div>
+<div id="bombFlash"></div>
+<div id="bombPips"></div>
+<div id="pad">
+  <div class="joy" id="joy">
+    <div class="joy-base"></div>
+    <div class="joy-knob" id="joyKnob"></div>
   </div>
-  <div id="ammoText">AMMO 12 / ∞ · [E] 발사</div>
+  <div class="bombBtn"><button id="bombBtn" data-k="b">B</button></div>
+  <div class="ab"><button id="fireBtn" data-k="a">A</button></div>
 </div>
-
-<div id="topRight">
-  <div class="wave" id="waveText">WAVE 1</div>
-  <div class="score" id="scoreText">SCORE 0</div>
+<div id="shipSelect">
+  <h1 id="shipSelectTitle">CHOOSE YOUR FIGHTER</h1>
+  <div class="shipRow" id="shipRow"></div>
 </div>
-
-<div id="storyBox"><div class="who" id="storyWho"></div><div id="storyText"></div></div>
-
-<div id="mobileControls" class="hidden">
-  <div id="mobileHint">왼쪽 스틱: 이동 · 오른쪽 스틱: 시점 · 버튼: 사격</div>
-  <div id="stickBase"><div id="stickKnob"></div></div>
-  <div id="stickBaseR"><div id="stickKnobR"></div></div>
-  <div id="shootBtn">FIRE</div>
+<div id="startScreen">
+  <h1>3D FIGHTER</h1>
+  <div class="sub">PIXEL FIGHTER · 3D TEST</div>
+  <div class="push" id="pushStartText">PUSH START TO START</div>
 </div>
-
-<div class="cutscene hidden" id="cutscene">
-  <div class="cutscene-bar top"></div>
-  <div class="cutscene-bar bottom"></div>
-  <div class="cutscene-content">
-    <div class="cutscene-art" id="cutsceneArt"><canvas id="cutsceneCanvas"></canvas></div>
-    <div class="cutscene-title" id="cutsceneTitle"></div>
-    <div class="cutscene-text" id="cutsceneText"></div>
-    <div class="cutscene-hint">클릭하여 계속</div>
-  </div>
+<div id="prologue">
+  <div class="crawl" id="prologueCrawl"></div>
 </div>
-
-<div class="overlay" id="startScreen">
-  <h1>SILENT PROTOCOL</h1>
-  <p>
-    당신은 정체불명의 지하 실험실에 잠입한 특수요원입니다. 통신은 끊겼고, 실험실은 이미 통제 불능 상태입니다.
-    유일한 목표는 최심부의 코어까지 도달하는 것. WASD로 이동하고, 화면을 마우스로 누른 채 좌우로 움직이면 시점이 회전합니다.
-    <b>E키</b>를 누르면 사격합니다. (모바일: 왼쪽 스틱으로 이동, 오른쪽 드래그로 시점, 오른쪽 버튼으로 사격)
-  </p>
-  <button class="btn" id="startBtn">잠입 시작</button>
-</div>
-
-<div class="overlay hidden" id="deathScreen">
-  <h2 style="color:#ff5c5c;">임무 실패</h2>
-  <p id="deathText">교신이 끊겼다... 당신의 신호는 여기서 사라졌다.</p>
-  <button class="btn" id="retryBtn">다시 시도</button>
-</div>
-
-<div class="overlay hidden" id="winScreen">
-  <h2 style="color:#7be89b;">SILENT PROTOCOL — 종료</h2>
-  <p id="winText"></p>
-  <button class="btn" id="restartBtn">한 번 더</button>
+<div id="langSelect">
+  <h1>SELECT LANGUAGE</h1>
+  <div class="shipRow" id="langRow"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 (function(){
-  "use strict";
+// ---------- 씬 기본 세팅 ----------
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x04060f, 0.012);
 
-  // ---------- Story script ----------
-  const STORY_BEATS = [
-    { at:'start', who:'통제실 (교신 두절)', text:'"...신호가 약하다. 코어까지 3개 구역이 남았다. 조심해서 진입하라."', art:'intro' },
-    { wave:2, who:'미상의 목소리', text:'"침입자를 확인. 이 시설의 진짜 목적을 알게 되면... 후회할 텐데."', art:'wave2' },
-    { wave:3, who:'통제실', text:'"경비 병력이 급증하고 있다. 버틸 수 있겠나?"', art:'wave3' },
-    { wave:4, who:'미상의 목소리', text:'"마지막 문 뒤에 무엇이 있는지, 정말 알고 싶은가?"', art:'wave4' }
-  ];
-  const WIN_TEXT = "코어의 문이 열리는 순간, 시설 전체의 불빛이 꺼졌다. 당신이 발견한 것은 무기가 아니라 좌표 하나였다 — 이 모든 일의 시작점을 가리키는. 임무는 끝났지만, 이야기는 이제 막 시작됐다.";
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0, 6, 14);
+camera.lookAt(0, 0, -4);
 
-  // Simple green-wireframe 3D scenes for each cutscene beat (matches the original grid-map look)
-  const CS_GREEN = 0x39ff88;
-  const CS_DIM = 0x123322;
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.prepend(renderer.domElement);
 
-  function wireMat(color, opacity){
-    return new THREE.MeshBasicMaterial({ color: color || CS_GREEN, wireframe:true, transparent:true, opacity: opacity==null?1:opacity });
-  }
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
 
-  function buildIntroScene(){
-    const g = new THREE.Group();
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.15), wireMat());
-    door.position.y = 1.1;
-    g.add(door);
-    const figure = new THREE.Group();
-    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), wireMat());
-    head.position.y = 1.5;
-    figure.add(head);
-    const body = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.9, 6), wireMat());
-    body.position.y = 0.9;
-    figure.add(body);
-    figure.position.z = 1.4;
-    g.add(figure);
-    g.userData.figure = figure;
-    return g;
-  }
+// ---------- 조명 ----------
+scene.add(new THREE.AmbientLight(0x4a5a7a, 1.1));
+const keyLight = new THREE.DirectionalLight(0xaeefff, 1.4);
+keyLight.position.set(4, 8, 6);
+scene.add(keyLight);
+const rim = new THREE.PointLight(0xff5566, 1.2, 40);
+rim.position.set(-6, 2, -6);
+scene.add(rim);
 
-  function buildWave2Scene(){
-    const g = new THREE.Group();
-    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), wireMat(CS_DIM, 0.5));
-    g.add(skull);
-    const eyeL = new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), wireMat());
-    eyeL.position.set(0.32, 0.1, 0.7);
-    g.add(eyeL);
-    const eyeR = eyeL.clone();
-    eyeR.position.x = -0.32;
-    g.add(eyeR);
-    g.userData.eyes = [eyeL, eyeR];
-    return g;
-  }
+// ---------- 별 배경 (워프 이동 애니메이션 가능) ----------
+const STAR_N = 900;
+const starPositions = new Float32Array(STAR_N*3);
+for (let i=0;i<STAR_N;i++){
+  starPositions[i*3]   = (Math.random()-0.5)*160;
+  starPositions[i*3+1] = (Math.random()-0.5)*160;
+  starPositions[i*3+2] = -Math.random()*220 - 10;
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starPoints = new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xdfefff, size:0.55, transparent:true}));
+scene.add(starPoints);
 
-  function buildWave3Scene(){
-    const g = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.75, 0), wireMat());
-    g.add(core);
-    const ring1 = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.02, 6, 24), wireMat(CS_GREEN, 0.6));
-    ring1.rotation.x = Math.PI/2;
-    g.add(ring1);
-    const ring2 = ring1.clone();
-    ring2.scale.setScalar(1.5);
-    g.add(ring2);
-    g.userData.rings = [ring1, ring2];
-    g.userData.core = core;
-    return g;
-  }
-
-  function buildWave4Scene(){
-    const g = new THREE.Group();
-    const vault = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.2, 1.8), wireMat());
-    g.add(vault);
-    const seal = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 20), wireMat(CS_GREEN, 0.8));
-    seal.position.z = 0.91;
-    g.add(seal);
-    g.userData.seal = seal;
-    return g;
-  }
-
-  function buildWinScene(){
-    const g = new THREE.Group();
-    const burst = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3, 0), wireMat());
-    g.add(burst);
-    const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 1), wireMat(CS_GREEN, 0.35));
-    g.add(shell);
-    g.userData.burst = burst;
-    g.userData.shell = shell;
-    return g;
-  }
-
-  const CUTSCENE_SCENES = { intro: buildIntroScene, wave2: buildWave2Scene, wave3: buildWave3Scene, wave4: buildWave4Scene, win: buildWinScene };
-
-  // ---------- Mini 3D renderer for cutscenes ----------
-  let csRenderer, csScene, csCamera, csGroup, csAnimActive = false, csTime = 0;
-
-  function initCutsceneRenderer(){
-    const canvas = document.getElementById('cutsceneCanvas');
-    csRenderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
-    csRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    csRenderer.setSize(220, 220, false);
-    csScene = new THREE.Scene();
-    csCamera = new THREE.PerspectiveCamera(42, 1, 0.1, 30);
-    csCamera.position.set(0, 1.3, 4.2);
-    csCamera.lookAt(0, 0.7, 0);
-    const grid = new THREE.GridHelper(8, 14, CS_GREEN, CS_DIM);
-    csScene.add(grid);
-  }
-
-  function setCutsceneScene(artKey){
-    if(csGroup){ csScene.remove(csGroup); }
-    const builder = CUTSCENE_SCENES[artKey];
-    csGroup = builder ? builder() : new THREE.Group();
-    csScene.add(csGroup);
-  }
-
-  function csAnimateFrame(){
-    if(!csAnimActive) return;
-    requestAnimationFrame(csAnimateFrame);
-    csTime += 0.016;
-    if(csGroup){
-      csGroup.rotation.y += 0.008;
-      if(csGroup.userData.eyes) csGroup.userData.eyes.forEach(e=>{ e.material.opacity = 0.55 + Math.sin(csTime*3)*0.45; });
-      if(csGroup.userData.core) csGroup.userData.core.scale.setScalar(1 + Math.sin(csTime*4)*0.08);
-      if(csGroup.userData.rings) csGroup.userData.rings.forEach((r,i)=>{ const s=1 + ((csTime*0.6 + i*0.5) % 1.2); r.scale.set(s,s,s); r.material.opacity = Math.max(0, 0.6 - (s-1)*0.5); });
-      if(csGroup.userData.seal) csGroup.userData.seal.rotation.z += 0.01;
-      if(csGroup.userData.shell) csGroup.userData.shell.rotation.x += 0.006;
-      if(csGroup.userData.burst) csGroup.userData.burst.scale.setScalar(1 + Math.sin(csTime*2)*0.15);
-      if(csGroup.userData.figure) csGroup.userData.figure.position.z = 1.4 - Math.min(1.1, csTime*0.15);
+let warpSpeed = 2.6; // 시작 화면: 우주를 빠르게 가르는 느낌
+function updateStars(){
+  const arr = starGeo.attributes.position.array;
+  for (let i=0;i<STAR_N;i++){
+    arr[i*3+2] += warpSpeed;
+    if (arr[i*3+2] > 20){
+      arr[i*3+2] = -220;
+      arr[i*3]   = (Math.random()-0.5)*160;
+      arr[i*3+1] = (Math.random()-0.5)*160;
     }
-    csRenderer.render(csScene, csCamera);
   }
+  starGeo.attributes.position.needsUpdate = true;
+}
 
-  function startCutsceneAnim(artKey){
-    setCutsceneScene(artKey);
-    csTime = 0;
-    csAnimActive = true;
-    csAnimateFrame();
+// ---------- 저폴리 전투기 (픽셀 게임 톤에 맞춘 각진 스타일) ----------
+function buildFighter(cfg){
+  cfg = cfg || {};
+  const jet = new THREE.Group();
+
+  const bodyMat = new THREE.MeshStandardMaterial({color:cfg.hull ?? 0x2b3a55, metalness:0.5, roughness:0.35, flatShading:true});
+  const accentMat = new THREE.MeshStandardMaterial({color:cfg.accent ?? 0x7fe0ff, metalness:0.3, roughness:0.25, flatShading:true, emissive:cfg.accentGlow ?? 0x1a5f77, emissiveIntensity:0.6});
+  const wingMat = new THREE.MeshStandardMaterial({color:cfg.wing ?? 0x8d1f49, metalness:0.4, roughness:0.4, flatShading:true});
+
+  // 동체
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.6, 6), bodyMat);
+  body.rotation.x = Math.PI/2;
+  jet.add(body);
+
+  // 조종석
+  const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), accentMat);
+  cockpit.position.set(0, 0.35, 0.6);
+  cockpit.scale.set(1, 0.7, 1.3);
+  jet.add(cockpit);
+
+  // 날개 (좌우)
+  const wingGeo = new THREE.BoxGeometry(2.6, 0.12, 1.1);
+  const wingL = new THREE.Mesh(wingGeo, wingMat);
+  wingL.position.set(-1.5, -0.05, -0.2);
+  wingL.rotation.z = 0.08;
+  jet.add(wingL);
+  const wingR = wingL.clone();
+  wingR.position.x = 1.5;
+  wingR.rotation.z = -0.08;
+  jet.add(wingR);
+
+  // 꼬리 날개
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.0, 0.9), wingMat);
+  tail.position.set(0, 0.6, -1.6);
+  jet.add(tail);
+
+  // 엔진 노즐 (발광)
+  const engineMat = new THREE.MeshStandardMaterial({color:0xff8a3d, emissive:0xff5a1f, emissiveIntensity:1.4});
+  [-0.6, 0.6].forEach(x=>{
+    const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.34,0.7,8), engineMat);
+    eng.rotation.x = Math.PI/2;
+    eng.position.set(x, -0.05, -1.9);
+    jet.add(eng);
+  });
+
+  jet.scale.setScalar(0.9);
+  return jet;
+}
+
+let jet = buildFighter();
+scene.add(jet);
+
+// ---------- 다국어 텍스트 ----------
+const I18N = {
+  en: {
+    chooseShip: 'CHOOSE YOUR FIGHTER',
+    ships: {
+      interceptor: { name:'Interceptor', desc:'Balanced · twin shot<br>Normal power / normal rate' },
+      spreader:    { name:'Spreader',    desc:'3-way spread<br>Wide coverage / slower rate' },
+      laser:       { name:'Laser',       desc:'Single piercing beam<br>High power / slow rate' },
+    },
+    prologue: [
+      'Year 2595...',
+      'An alien race — long-chinned, green-skinned, unidentified —<br>appeared and destroyed the Earth...',
+      "Humanity's last fleet was scattered,<br>and only one fighter survived.",
+      'Now, you sit in that cockpit.',
+    ],
+    tapLaunch: 'TAP TO LAUNCH',
+    pushStart: 'PUSH START TO START',
+    stageWord: 'STAGE',
+    warping: 'WARPING TO NEXT SECTOR...',
+    bossAppear: 'BOSS!', bossRage: 'BOSS RAGE!', bossRetreat: 'BOSS RETREAT!', bossDestroyed: 'BOSS DESTROYED!',
+    stageComms: { 2:'Good, next sector! Stay sharp!', 3:'Enemy density rising, watch out!', 4:'Almost there, hang in!', 5:'This is the final sector!' },
+    stageEnterFallback: 'Entering sector {n}!',
+    commBossAppear: 'Boss incoming! Stay focused!',
+    commBossRage: "It's getting rough, watch out!",
+    gameOverTitle: 'GAME OVER', gameOverSub: 'Tap or press any key to restart',
+    gameClearTitle: 'GAME CLEAR', gameClearSub: 'Tap or press any key to restart',
+    hudSpecial: 'B: SPECIAL', hudBossIn: 'Boss in {n} kills', hudBossFight: 'BOSS FIGHT!',
+  },
+  zh: {
+    chooseShip: '选择你的战机',
+    ships: {
+      interceptor: { name:'拦截者', desc:'均衡型 · 双发直射<br>火力适中 / 射速适中' },
+      spreader:    { name:'散射者', desc:'三方扇形弹<br>覆盖范围广 / 射速较慢' },
+      laser:       { name:'激光者', desc:'单发穿透光束<br>高火力 / 射速慢' },
+    },
+    prologue: [
+      '2595年...',
+      '一支下巴细长、绿色皮肤的不明外星种族<br>出现并摧毁了地球...',
+      '人类最后的舰队四散逃离，<br>只有一架战机幸存下来。',
+      '此刻，你正坐在那架战机的驾驶舱里。',
+    ],
+    tapLaunch: 'TAP TO LAUNCH',
+    pushStart: 'PUSH START TO START',
+    stageWord: 'STAGE',
+    warping: '正在跃迁至下一星区...',
+    bossAppear: 'BOSS!', bossRage: 'BOSS 狂暴!', bossRetreat: 'BOSS 撤退!', bossDestroyed: 'BOSS 已摧毁!',
+    stageComms: { 2:'好，下一个星区！保持警惕！', 3:'敌人密度上升，小心！', 4:'快到了，坚持住！', 5:'这里是最后的星区！' },
+    stageEnterFallback: '进入第{n}星区！',
+    commBossAppear: 'BOSS 出现了！打起精神！',
+    commBossRage: '它变得更凶猛了，小心！',
+    gameOverTitle: 'GAME OVER', gameOverSub: '点击或按任意键重新开始',
+    gameClearTitle: 'GAME CLEAR', gameClearSub: '点击或按任意键重新开始',
+    hudSpecial: 'B：必杀技', hudBossIn: '还需{n}杀出现BOSS', hudBossFight: 'BOSS 战斗中!',
+  },
+  ja: {
+    chooseShip: '機体を選択せよ',
+    ships: {
+      interceptor: { name:'インターセプター', desc:'バランス型 · ツインショット<br>火力普通 / 連射普通' },
+      spreader:    { name:'スプレッダー',     desc:'3方向拡散弾<br>広範囲 / 連射やや遅い' },
+      laser:       { name:'レーザー',         desc:'単発貫通ビーム<br>高火力 / 連射遅い' },
+    },
+    prologue: [
+      '2595年...',
+      '顎の長い緑色の肌をした正体不明の異星種族が<br>現れ、地球を破壊した...',
+      '人類最後の艦隊は散り散りになり、<br>ただ一機の戦闘機だけが生き残った。',
+      '今、あなたはそのコックピットに座っている。',
+    ],
+    tapLaunch: 'TAP TO LAUNCH',
+    pushStart: 'PUSH START TO START',
+    stageWord: 'STAGE',
+    warping: '次のセクターへワープ中...',
+    bossAppear: 'BOSS!', bossRage: 'BOSS 覚醒!', bossRetreat: 'BOSS 撤退!', bossDestroyed: 'BOSS 撃破!',
+    stageComms: { 2:'よし、次のセクターだ！気を抜くな！', 3:'敵の密度が上がってきた、注意しろ！', 4:'もうすぐだ、頑張れ！', 5:'ここが最終セクターだ！' },
+    stageEnterFallback: 'セクター{n}へ突入！',
+    commBossAppear: 'ボスだ！気を引き締めろ！',
+    commBossRage: 'ヤバい、さらに凶暴になったぞ！',
+    gameOverTitle: 'GAME OVER', gameOverSub: 'タップまたは何かキーを押してリスタート',
+    gameClearTitle: 'GAME CLEAR', gameClearSub: 'タップまたは何かキーを押してリスタート',
+    hudSpecial: 'B：必殺技', hudBossIn: 'あと{n}キルでボス出現', hudBossFight: 'BOSS 戦闘中!',
+  },
+  ko: {
+    chooseShip: '기체를 선택하세요',
+    ships: {
+      interceptor: { name:'인터셉터', desc:'균형형 · 트윈샷<br>화력 보통 / 연사 보통' },
+      spreader:    { name:'스프레더', desc:'부채꼴 3way<br>범위 넓음 / 연사 느림' },
+      laser:       { name:'레이저',   desc:'단발 관통형 빔<br>고화력 / 연사 느림' },
+    },
+    prologue: [
+      '2595년...',
+      'Long-chinned green-skinned unidentified라는<br>외계종족이 나타나 지구를 파괴하였다...',
+      '인류의 마지막 함대는 흩어졌고,<br>단 한 대의 전투기만이 살아남았다.',
+      '이제, 그 조종석에 당신이 앉아 있다.',
+    ],
+    tapLaunch: 'TAP TO LAUNCH',
+    pushStart: 'PUSH START TO START',
+    stageWord: 'STAGE',
+    warping: 'WARPING TO NEXT SECTOR...',
+    bossAppear: 'BOSS!', bossRage: 'BOSS RAGE!', bossRetreat: 'BOSS RETREAT!', bossDestroyed: 'BOSS DESTROYED!',
+    stageComms: { 2:'좋아, 다음 구역이다! 긴장 풀지 마!', 3:'적 밀도가 올라간다, 조심해!', 4:'거의 다 왔어, 힘내자!', 5:'여기가 마지막 구역이다!' },
+    stageEnterFallback: '구역 {n} 진입!',
+    commBossAppear: '보스다! 정신 똑바로 차려!',
+    commBossRage: '위험해, 놈이 더 거칠어졌어!',
+    gameOverTitle: 'GAME OVER', gameOverSub: '탭하거나 아무 키나 눌러 재시작',
+    gameClearTitle: 'GAME CLEAR', gameClearSub: '탭하거나 아무 키나 눌러 다시 시작',
+    hudSpecial: 'B: 필살기', hudBossIn: '보스까지 {n}킬', hudBossFight: 'BOSS전!',
+  },
+  es: {
+    chooseShip: 'ELIGE TU NAVE',
+    ships: {
+      interceptor: { name:'Interceptor', desc:'Equilibrado · disparo doble<br>Potencia normal / cadencia normal' },
+      spreader:    { name:'Dispersor',   desc:'Disparo en abanico de 3 vías<br>Amplia cobertura / cadencia lenta' },
+      laser:       { name:'Láser',       desc:'Rayo perforante único<br>Alta potencia / cadencia lenta' },
+    },
+    prologue: [
+      'Año 2595...',
+      'Una raza alienígena de piel verde y mentón alargado, no identificada,<br>apareció y destruyó la Tierra...',
+      'La última flota de la humanidad se dispersó,<br>y solo un caza sobrevivió.',
+      'Ahora, tú estás sentado en esa cabina.',
+    ],
+    tapLaunch: 'TAP TO LAUNCH',
+    pushStart: 'PUSH START TO START',
+    stageWord: 'STAGE',
+    warping: 'SALTANDO AL SIGUIENTE SECTOR...',
+    bossAppear: '¡JEFE!', bossRage: '¡JEFE FURIOSO!', bossRetreat: '¡JEFE EN RETIRADA!', bossDestroyed: '¡JEFE DESTRUIDO!',
+    stageComms: { 2:'¡Bien, siguiente sector! ¡Mantente alerta!', 3:'La densidad enemiga aumenta, ¡ten cuidado!', 4:'¡Ya casi llegamos, aguanta!', 5:'¡Este es el sector final!' },
+    stageEnterFallback: '¡Entrando al sector {n}!',
+    commBossAppear: '¡El jefe llega! ¡Concéntrate!',
+    commBossRage: '¡Cuidado, se ha vuelto más agresivo!',
+    gameOverTitle: 'GAME OVER', gameOverSub: 'Toca o pulsa cualquier tecla para reiniciar',
+    gameClearTitle: 'GAME CLEAR', gameClearSub: 'Toca o pulsa cualquier tecla para reiniciar',
+    hudSpecial: 'B: ESPECIAL', hudBossIn: 'Jefe en {n} bajas', hudBossFight: '¡COMBATE DE JEFE!',
+  },
+};
+
+// ---------- 기체 선택 ----------
+const SHIPS = [
+  {
+    id:'interceptor',
+    hull:0x2b3a55, accent:0x7fe0ff, accentGlow:0x1a5f77, wing:0x8d1f49,
+    boltColor:0x8fe9ff, fireGap:110, boltDamage:1, laser:false,
+    pattern(lvl){
+      const dx=[-1.1,1.1];
+      if (lvl>=2) dx.push(0);
+      if (lvl>=3) dx.push(-2.0,2.0);
+      return dx.map(x=>({dx:x, vx:0}));
+    }
+  },
+  {
+    id:'spreader',
+    hull:0x1f4a3a, accent:0x7dffb0, accentGlow:0x0f6a3a, wing:0x1f6a49,
+    boltColor:0x7dffb0, fireGap:150, boltDamage:1, laser:false,
+    pattern(lvl){
+      const shots=[{dx:0,vx:0},{dx:-0.5,vx:-0.03},{dx:0.5,vx:0.03}];
+      if (lvl>=2) shots.push({dx:-1.0,vx:-0.06},{dx:1.0,vx:0.06});
+      if (lvl>=3) shots.push({dx:-1.5,vx:-0.09},{dx:1.5,vx:0.09});
+      return shots;
+    }
+  },
+  {
+    id:'laser',
+    hull:0x3a1f4a, accent:0xd18bff, accentGlow:0x6a1f8a, wing:0x5a1f6a,
+    boltColor:0xd18bff, fireGap:230, boltDamage:3, laser:true,
+    pattern(lvl){
+      const shots=[{dx:0,vx:0}];
+      if (lvl>=2) shots.push({dx:-0.55,vx:0},{dx:0.55,vx:0});
+      if (lvl>=3) shots.push({dx:-1.05,vx:0},{dx:1.05,vx:0});
+      return shots;
+    }
+  },
+];
+SHIPS.forEach(s => { s.boltMat = new THREE.MeshBasicMaterial({color:s.boltColor}); });
+
+let shipConfig = null;
+let weaponLevel = 1;
+let gameStarted = false;
+
+const shipSelectEl = document.getElementById('shipSelect');
+const shipRowEl = document.getElementById('shipRow');
+const shipSelectTitleEl = document.getElementById('shipSelectTitle');
+
+function renderShipCards(){
+  shipRowEl.innerHTML = '';
+  SHIPS.forEach((s, idx) => {
+    const hex = '#' + s.boltColor.toString(16).padStart(6,'0');
+    const info = I18N[currentLang].ships[s.id];
+    const card = document.createElement('div');
+    card.className = 'shipCard';
+    card.style.color = hex;
+    card.innerHTML = `<div class="swatch" style="background:${hex}"></div>
+      <div class="nm">${info.name}</div><div class="ds">${info.desc}</div>`;
+    card.onpointerdown = () => selectShip(idx);
+    shipRowEl.appendChild(card);
+  });
+}
+
+function selectShip(idx){
+  shipConfig = SHIPS[idx];
+  weaponLevel = 1;
+  scene.remove(jet);
+  jet = buildFighter(shipConfig);
+  scene.add(jet);
+  shipSelectEl.style.display = 'none';
+  showPrologue();
+}
+
+// ---------- 프롤로그 (오프닝 크롤) ----------
+const prologueEl = document.getElementById('prologue');
+const prologueCrawlEl = document.getElementById('prologueCrawl');
+let prologueLines = [];
+let prologueTapEl = null;
+let prologueReady = false;
+
+function renderPrologue(){
+  const lang = I18N[currentLang];
+  prologueCrawlEl.innerHTML = lang.prologue.map(line => `<p>${line}</p>`).join('') +
+    `<p class="tap">${lang.tapLaunch}</p>`;
+  prologueLines = prologueCrawlEl.querySelectorAll('p:not(.tap)');
+  prologueTapEl = prologueCrawlEl.querySelector('.tap');
+}
+
+function showPrologue(){
+  renderPrologue();
+  prologueEl.style.display = 'flex';
+  warpSpeed = 0.35; // 프롤로그 동안은 잔잔하게 흐르는 우주
+  prologueReady = false;
+  prologueLines.forEach((p, i) => {
+    setTimeout(() => p.classList.add('show'), 500 + i*1000);
+  });
+  setTimeout(() => {
+    prologueTapEl.classList.add('show');
+    prologueReady = true;
+  }, 500 + prologueLines.length*1000 + 500);
+}
+
+function dismissPrologue(){
+  if (!prologueReady) return;
+  prologueEl.style.display = 'none';
+  gameStarted = true;
+  warpSpeed = 0.18;
+}
+prologueEl.onpointerdown = dismissPrologue;
+addEventListener('keydown', () => { if (prologueEl.style.display === 'flex') dismissPrologue(); });
+
+// ---------- 시작 화면 (PUSH START TO START) ----------
+let showingStart = true;
+const startScreenEl = document.getElementById('startScreen');
+const pushStartTextEl = document.getElementById('pushStartText');
+function dismissStart(){
+  if (!showingStart) return;
+  showingStart = false;
+  ensureAudio(); // 사용자 제스처 시점에 오디오 언락
+  startScreenEl.style.display = 'none';
+  shipSelectEl.style.display = 'flex';
+  warpSpeed = 0.9; // 기체 선택 중엔 우주를 순항하는 느낌으로 완화
+}
+startScreenEl.onpointerdown = dismissStart;
+addEventListener('keydown', () => { if (showingStart) dismissStart(); });
+
+// ---------- 언어 선택 (맨 처음 화면) ----------
+const langSelectEl = document.getElementById('langSelect');
+const langRowEl = document.getElementById('langRow');
+const gameOverTitleEl = document.getElementById('gameOverTitle');
+const gameOverSubEl = document.getElementById('gameOverSub');
+const gameClearTitleEl = document.getElementById('gameClearTitle');
+const gameClearSubEl = document.getElementById('gameClearSub');
+
+const LANGS = [
+  { code:'en', label:'English' },
+  { code:'zh', label:'中文' },
+  { code:'ja', label:'日本語' },
+  { code:'ko', label:'한국어' },
+  { code:'es', label:'Español' },
+];
+LANGS.forEach(l => {
+  const card = document.createElement('div');
+  card.className = 'langCard';
+  card.textContent = l.label;
+  card.onpointerdown = () => pickLang(l.code);
+  langRowEl.appendChild(card);
+});
+
+let currentLang = 'en';
+
+function applyLang(){
+  const lang = I18N[currentLang];
+  pushStartTextEl.textContent = lang.pushStart;
+  shipSelectTitleEl.textContent = lang.chooseShip;
+  renderShipCards();
+  gameOverTitleEl.textContent = lang.gameOverTitle;
+  gameOverSubEl.textContent = lang.gameOverSub;
+  gameClearTitleEl.textContent = lang.gameClearTitle;
+  gameClearSubEl.textContent = lang.gameClearSub;
+}
+
+function pickLang(code){
+  currentLang = code;
+  applyLang();
+  langSelectEl.style.display = 'none';
+  startScreenEl.style.display = 'flex';
+}
+
+// ---------- 몬스터 3종 (전투기와 대비되는 붉은/보라 톤) ----------
+
+// 1) 브루트 — 기존 UFO, 중간 속도, 체력 2
+function buildBrute(){
+  const m = new THREE.Group();
+  const discMat = new THREE.MeshStandardMaterial({color:0x5a1f3a, metalness:0.55, roughness:0.35, flatShading:true});
+  const domeMat = new THREE.MeshStandardMaterial({color:0xff4d6d, emissive:0x8a0f2a, emissiveIntensity:0.9, metalness:0.2, roughness:0.3, flatShading:true});
+  const ringMat = new THREE.MeshStandardMaterial({color:0xffb84d, emissive:0xff8a1f, emissiveIntensity:1.2});
+
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.4, 0.42, 8), discMat);
+  m.add(disc);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6, 0, Math.PI*2, 0, Math.PI/2), domeMat);
+  dome.position.y = 0.2;
+  m.add(dome);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.07, 6, 10), ringMat);
+  ring.rotation.x = Math.PI/2;
+  ring.position.y = -0.16;
+  m.add(ring);
+  return m;
+}
+
+// 2) 스카우트 — 작고 빠른 다트형, 체력 1
+function buildScout(){
+  const m = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({color:0x2a1a4a, metalness:0.5, roughness:0.3, flatShading:true});
+  const glowMat = new THREE.MeshStandardMaterial({color:0xc98bff, emissive:0x8a3dff, emissiveIntensity:1.3, flatShading:true});
+
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.5, 5), hullMat);
+  nose.rotation.x = Math.PI/2;
+  m.add(nose);
+  const finGeo = new THREE.BoxGeometry(1.5, 0.08, 0.5);
+  const finL = new THREE.Mesh(finGeo, glowMat);
+  finL.position.set(-0.55, 0, 0.15);
+  finL.rotation.z = 0.15;
+  m.add(finL);
+  const finR = finL.clone();
+  finR.position.x = 0.55;
+  finR.rotation.z = -0.15;
+  m.add(finR);
+  const tailGlow = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 6), glowMat);
+  tailGlow.position.z = 0.8;
+  m.add(tailGlow);
+  return m;
+}
+
+// 3) 거너 — 크고 느리지만 플레이어를 향해 사격, 체력 3
+function buildGunner(){
+  const m = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({color:0x3a0f2a, metalness:0.5, roughness:0.4, flatShading:true});
+  const turretMat = new THREE.MeshStandardMaterial({color:0xff3d7a, emissive:0xc9174f, emissiveIntensity:1.1, flatShading:true});
+  const barrelMat = new THREE.MeshStandardMaterial({color:0xffdf6b, emissive:0xffb020, emissiveIntensity:1.4});
+
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 1.9), hullMat);
+  m.add(hull);
+  const turret = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), turretMat);
+  turret.position.set(0, 0.4, -0.5);
+  m.add(turret);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.9, 6), barrelMat);
+  barrel.rotation.x = Math.PI/2;
+  barrel.position.set(0, 0.4, -1.15);
+  m.add(barrel);
+  return m;
+}
+
+const MONSTER_TYPES = [
+  { name:'brute',  build:buildBrute,  hp:2, dz:0.16, scale:0.85, swayMin:0.6, swayMax:1.2, burst:0xffb04d, canShoot:false, weight:5 },
+  { name:'scout',  build:buildScout,  hp:1, dz:0.30, scale:0.75, swayMin:1.4, swayMax:2.4, burst:0xc98bff, canShoot:false, weight:3 },
+  { name:'gunner', build:buildGunner, hp:3, dz:0.09, scale:0.9,  swayMin:0.3, swayMax:0.5, burst:0xff5566, canShoot:true,  shootGap:95, shotSpeed:0.24, weight:2 },
+];
+function pickType(){
+  const total = MONSTER_TYPES.reduce((s,t)=>s+t.weight,0);
+  let r = Math.random()*total;
+  for (const type of MONSTER_TYPES){ if ((r -= type.weight) <= 0) return type; }
+  return MONSTER_TYPES[0];
+}
+
+const monsters = []; // {mesh, type, hp, dz, swayOffset, sway, shootTimer}
+const MON_SPAWN_Z = -70;
+const MON_HIT_Z = 15;
+let spawnTimer = 0;
+const SPAWN_GAP = 60;
+
+function spawnMonster(){
+  const type = pickType();
+  const mesh = type.build();
+  mesh.scale.setScalar(type.scale);
+  mesh.position.set((Math.random()-0.5)*11, Math.random()*3 - 0.5, MON_SPAWN_Z);
+  scene.add(mesh);
+  monsters.push({
+    mesh, type, hp: type.hp, dz: type.dz,
+    swayOffset: Math.random()*10,
+    sway: type.swayMin + Math.random()*(type.swayMax-type.swayMin),
+    shootTimer: type.canShoot ? Math.random()*type.shootGap : 0,
+  });
+}
+
+// 적 탄환 (거너/보스 공용)
+const enemyBoltMat = new THREE.MeshBasicMaterial({color:0xff5566});
+const enemyBoltGeo = new THREE.SphereGeometry(0.14, 6, 6);
+const enemyBolts = []; // {mesh, vel}
+
+function spawnEnemyBolt(pos, vel){
+  const m = new THREE.Mesh(enemyBoltGeo, enemyBoltMat);
+  m.position.copy(pos);
+  scene.add(m);
+  enemyBolts.push({ mesh: m, vel });
+}
+
+function enemyFire(mo){
+  const from = mo.mesh.position;
+  const dir = new THREE.Vector3(jet.position.x - from.x, jet.position.y - from.y, jet.position.z - from.z).normalize();
+  spawnEnemyBolt(from, dir.multiplyScalar(mo.type.shotSpeed));
+}
+
+function updateEnemyBolts(dt){
+  for (let i = enemyBolts.length - 1; i >= 0; i--){
+    const eb = enemyBolts[i];
+    eb.mesh.position.add(eb.vel);
+    const distToJet = eb.mesh.position.distanceTo(jet.position);
+    if (distToJet < 1.3){
+      hitFlash();
+      takeDamage(ENEMY_BOLT_DAMAGE);
+      scene.remove(eb.mesh);
+      enemyBolts.splice(i, 1);
+      continue;
+    }
+    if (eb.mesh.position.z > 22 || eb.mesh.position.z < MON_SPAWN_Z - 5){
+      scene.remove(eb.mesh);
+      enemyBolts.splice(i, 1);
+    }
   }
+}
 
-  function stopCutsceneAnim(){
-    csAnimActive = false;
+// ---------- 플레이어 체력 ----------
+const PLAYER_MAX_HP = 1000;
+const ENEMY_BOLT_DAMAGE = 30;
+let playerHP = PLAYER_MAX_HP;
+let gameOver = false;
+const hpFillEl = document.getElementById('hpFill');
+const gameOverEl = document.getElementById('gameOverMsg');
+
+function updateHpUI(){
+  hpFillEl.style.width = Math.max(0, playerHP/PLAYER_MAX_HP*100) + '%';
+}
+
+function takeDamage(amount){
+  if (gameOver) return;
+  playerHP = Math.max(0, playerHP - amount);
+  updateHpUI();
+  if (playerHP <= 0) triggerGameOver();
+}
+
+function triggerGameOver(){
+  gameOver = true;
+  gameOverEl.style.display = 'flex';
+}
+
+function restartGame(){
+  playerHP = PLAYER_MAX_HP;
+  score = 0; kills = 0;
+  gameOver = false;
+  bossTriggered = false;
+  stage = 1;
+  setStageBackground(stage);
+  gameOverEl.style.display = 'none';
+  updateHpUI();
+  bossBarEl.style.display = 'none';
+
+  inEnding = false;
+  endingT = 0;
+  endingShown = false;
+  purpleWashEl.style.opacity = '0';
+  endingMsgEl.style.display = 'none';
+  if (earthMesh) earthMesh.visible = false;
+  clearTimeout(commTimer);
+  commBoxEl.classList.remove('show');
+
+  monsters.forEach(mo => scene.remove(mo.mesh)); monsters.length = 0;
+  bolts.forEach(b => scene.remove(b)); bolts.length = 0;
+  enemyBolts.forEach(eb => scene.remove(eb.mesh)); enemyBolts.length = 0;
+  bursts.forEach(b => scene.remove(b.points)); bursts.length = 0;
+  if (boss){ scene.remove(boss.mesh); boss = null; }
+
+  items.forEach(it => scene.remove(it.mesh)); items.length = 0;
+  shocks.forEach(s => scene.remove(s.mesh)); shocks.length = 0;
+  weaponLevel = 1;
+  bombCharges = 2;
+  updateBombPips();
+
+  jet.position.set(0,0,0); px = 0; py = 0;
+}
+
+addEventListener('keydown', () => { if (gameOver || endingShown) restartGame(); });
+gameOverEl.onpointerdown = () => { if (gameOver) restartGame(); };
+document.getElementById('endingMsg').onpointerdown = () => { if (endingShown) restartGame(); };
+
+// 가벼운 피격 신호 (본격적인 체력 시스템은 다음 단계)
+const hitFlashEl = document.getElementById('hitFlash');
+let hitFlashTimer = 0;
+function hitFlash(){
+  hitFlashEl.style.opacity = '0.35';
+  hitFlashTimer = 0.12;
+}
+function updateHitFlash(dt){
+  if (hitFlashTimer > 0){
+    hitFlashTimer -= dt;
+    if (hitFlashTimer <= 0) hitFlashEl.style.opacity = '0';
   }
+}
 
-  // ---------- Audio (synthesized, no files needed) ----------
-  let audioCtx;
-  function initAudio(){
-    try {
-      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      else if(audioCtx.state === 'suspended') audioCtx.resume();
-    } catch(e){ /* audio unsupported, fail silently */ }
+// 피격 폭발 파티클
+const bursts = []; // {points, vels, life}
+function spawnBurst(pos, color){
+  const N = 18;
+  const g = new THREE.BufferGeometry();
+  const pos3 = new Float32Array(N*3);
+  const vels = [];
+  for (let i=0;i<N;i++){
+    pos3[i*3]=pos.x; pos3[i*3+1]=pos.y; pos3[i*3+2]=pos.z;
+    const dir = new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)).normalize();
+    const spd = 0.08 + Math.random()*0.14;
+    vels.push(dir.multiplyScalar(spd));
   }
+  g.setAttribute('position', new THREE.BufferAttribute(pos3,3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({color, size:0.22, transparent:true, opacity:1}));
+  scene.add(pts);
+  bursts.push({ points: pts, vels, life: 0.5, age: 0 });
+}
 
-  function playBlip(){
-    if(!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(240 + Math.random()*460, t);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.11, t + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.07);
-  }
+function updateMonsters(dt){
+  spawnTimer++;
+  if (!boss && spawnTimer > SPAWN_GAP){ spawnMonster(); spawnTimer = 0; }
 
-  function playStatic(dur){
-    if(!audioCtx) return;
-    dur = dur || 0.35;
-    const bufferSize = Math.floor(audioCtx.sampleRate * dur);
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for(let i=0;i<bufferSize;i++) data[i] = Math.random()*2 - 1;
-    const noise = audioCtx.createBufferSource();
-    noise.buffer = buffer;
-    const band = audioCtx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.value = 1700;
-    band.Q.value = 0.6;
-    const gain = audioCtx.createGain();
-    const t = audioCtx.currentTime;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    noise.connect(band);
-    band.connect(gain);
-    gain.connect(audioCtx.destination);
-    noise.start(t);
-    noise.stop(t + dur);
-  }
+  for (let i = monsters.length - 1; i >= 0; i--){
+    const mo = monsters[i];
+    const me = mo.mesh;
+    me.position.z += mo.dz;
+    me.position.x += Math.sin(t*mo.sway + mo.swayOffset) * (mo.type.name==='scout' ? 0.05 : 0.03);
+    me.rotation.y += mo.type.name==='scout' ? 0.06 : 0.03;
 
-  function showStory(who, text, duration){
-    const box = document.getElementById('storyBox');
-    document.getElementById('storyWho').textContent = who;
-    document.getElementById('storyText').textContent = text;
-    box.style.display = 'block';
-    clearTimeout(showStory._t);
-    showStory._t = setTimeout(()=>{ box.style.display='none'; }, duration || 5200);
-  }
-
-  // ---------- Cutscenes ----------
-  function showCutscene(title, text, onDone, autoAdvanceMs, artKey){
-    const el = document.getElementById('cutscene');
-    document.getElementById('cutsceneTitle').textContent = title;
-    const textEl = document.getElementById('cutsceneText');
-    textEl.textContent = '';
-    startCutsceneAnim(artKey);
-    playStatic();
-    el.classList.remove('hidden');
-    // force reflow so the opacity transition actually plays
-    void el.offsetWidth;
-    requestAnimationFrame(()=> el.classList.add('show'));
-
-    let typing = true;
-    let charIndex = 0;
-    const typeTimer = setInterval(()=>{
-      charIndex++;
-      textEl.textContent = text.slice(0, charIndex);
-      const ch = text[charIndex - 1];
-      if(ch && ch.trim() !== '' && charIndex % 2 === 0) playBlip();
-      if(charIndex >= text.length){
-        clearInterval(typeTimer);
-        typing = false;
+    if (mo.type.canShoot){
+      mo.shootTimer++;
+      if (mo.shootTimer > mo.type.shootGap && me.position.z < 8){
+        enemyFire(mo);
+        mo.shootTimer = 0;
       }
-    }, 28);
+    }
 
-    let done = false;
-    const finish = ()=>{
-      if(done) return;
-      done = true;
-      el.classList.remove('show');
-      el.removeEventListener('click', onClick);
-      clearTimeout(autoTimer);
-      clearInterval(typeTimer);
-      stopCutsceneAnim();
-      setTimeout(()=> el.classList.add('hidden'), 700);
-      if(onDone) onDone();
-    };
-    const onClick = ()=>{
-      if(typing){
-        clearInterval(typeTimer);
-        textEl.textContent = text;
-        typing = false;
-      } else {
-        finish();
+    if (me.position.z > MON_HIT_Z){
+      scene.remove(me);
+      monsters.splice(i, 1);
+      continue;
+    }
+
+    // 볼트와의 충돌 판정
+    for (let j = bolts.length - 1; j >= 0; j--){
+      const b = bolts[j];
+      if (b.position.distanceTo(me.position) < 1.15){
+        scene.remove(b);
+        bolts.splice(j, 1);
+        mo.hp -= (b.userData.dmg || 1);
+        if (mo.hp <= 0){
+          spawnBurst(me.position, mo.type.burst);
+          scene.remove(me);
+          monsters.splice(i, 1);
+          kills++;
+          score += mo.type.name==='gunner' ? 300 : (mo.type.name==='scout' ? 80 : 100);
+        }
+        break;
       }
-    };
-    el.addEventListener('click', onClick);
-    const autoTimer = autoAdvanceMs ? setTimeout(finish, autoAdvanceMs) : null;
-  }
-
-  // ---------- Three.js setup ----------
-  let scene, camera, renderer, raycaster;
-  let yaw = Math.PI, pitch = 0;
-  let isDragging = false;
-  let dragLastX = 0, dragLastY = 0;
-  let bobPhase = 0;
-  const joystick = { x:0, y:0 };
-  const lookStick = { x:0, y:0 };
-  const player = { height:1.7, speed:5.2, health:100, ammoInClip:12, radius:0.4 };
-  const keys = {};
-  const velocity = new THREE.Vector3();
-  const enemies = [];
-  const bullets = []; // muzzle tracer effects
-  let wave = 1;
-  let score = 0;
-  let enemiesRemainingInWave = 0;
-  let gameActive = false;
-  let lastTime = performance.now();
-  let muzzleFlashMesh, gunMesh, muzzleLight, dustPoints;
-  const particles = [];
-  let worldBounds = 28;
-  const ENEMY_COLORS = [0xc9c23a, 0x8a95a0, 0xd98a2f, 0x3d4550, 0x6b2f4a];
-
-  function makePanelTexture(baseHex, lineHex, size, cell){
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = baseHex;
-    ctx.fillRect(0,0,size,size);
-    // subtle noise
-    for(let i=0;i<1400;i++){
-      const x = Math.random()*size, y = Math.random()*size;
-      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.05)';
-      ctx.fillRect(x, y, 2, 2);
-    }
-    // panel grid lines
-    ctx.strokeStyle = lineHex;
-    ctx.lineWidth = 2;
-    for(let x=0; x<=size; x+=cell){
-      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,size); ctx.stroke();
-    }
-    for(let y=0; y<=size; y+=cell){
-      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(size,y); ctx.stroke();
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-  }
-
-  function makeGlowTexture(){
-    const size = 128;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.35, 'rgba(255,255,255,0.5)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0,0,size,size);
-    return new THREE.CanvasTexture(canvas);
-  }
-
-  function addLampFixture(x, y, z, color, intensity, dist){
-    const light = new THREE.PointLight(color, intensity, dist, 2);
-    light.position.set(x, y, z);
-    scene.add(light);
-    const bulb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      new THREE.MeshBasicMaterial({ color:color })
-    );
-    bulb.position.set(x, y, z);
-    scene.add(bulb);
-    return light;
-  }
-
-  function initThree(){
-    scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xdbe6ee, 10, 44);
-    scene.background = new THREE.Color(0xdbe6ee);
-
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 200);
-    camera.position.set(0, player.height, 8);
-
-    renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    document.body.appendChild(renderer.domElement);
-
-    raycaster = new THREE.Raycaster();
-
-    // Base ambient + bright clinical directional light (lab feel)
-    const amb = new THREE.AmbientLight(0xdfeaf2, 0.75);
-    scene.add(amb);
-    const dir = new THREE.DirectionalLight(0xf2f8ff, 0.6);
-    dir.position.set(10, 20, 10);
-    dir.castShadow = true;
-    dir.shadow.mapSize.set(2048, 2048);
-    dir.shadow.camera.left = -worldBounds;
-    dir.shadow.camera.right = worldBounds;
-    dir.shadow.camera.top = worldBounds;
-    dir.shadow.camera.bottom = -worldBounds;
-    dir.shadow.camera.near = 1;
-    dir.shadow.camera.far = 60;
-    dir.shadow.bias = -0.0015;
-    scene.add(dir);
-
-    // Lab ceiling lamps (cool white/cyan, one amber warning light)
-    const lampSpots = [
-      [10, 5.5, 10, 0xdfeeff, 2.4, 22],
-      [-10, 5.5, -10, 0xdfeeff, 2.4, 22],
-      [12, 5.5, -12, 0x8fd8ff, 2.0, 20],
-      [-12, 5.5, 12, 0x8fd8ff, 2.0, 20],
-      [0, 5.5, -20, 0xffb43b, 1.4, 18],
-      [0, 5.5, 20, 0xdfeeff, 2.0, 18],
-    ];
-    lampSpots.forEach(([x,y,z,c,i,d])=> addLampFixture(x,y,z,c,i,d));
-
-    // Floor (procedural white lab tile texture)
-    const floorTex = makePanelTexture('#e6edf3', 'rgba(60,140,190,0.4)', 512, 64);
-    floorTex.repeat.set(worldBounds/2, worldBounds/2);
-    floorTex.encoding = THREE.sRGBEncoding;
-    const floorGeo = new THREE.PlaneGeometry(worldBounds*2, worldBounds*2);
-    const floorMat = new THREE.MeshStandardMaterial({ map:floorTex, color:0xffffff, roughness:0.55, metalness:0.1 });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI/2;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    // Grid overlay for extra depth cue
-    const grid = new THREE.GridHelper(worldBounds*2, 40, 0x2fa5e0, 0xc7d6e0);
-    grid.position.y = 0.015;
-    scene.add(grid);
-
-    // Walls (box perimeter, white lab panel texture)
-    const wallTex = makePanelTexture('#f0f4f8', 'rgba(50,120,180,0.3)', 512, 96);
-    wallTex.repeat.set(6, 2);
-    wallTex.encoding = THREE.sRGBEncoding;
-    const wallMat = new THREE.MeshStandardMaterial({ map:wallTex, color:0xffffff, roughness:0.6, metalness:0.05 });
-    const wallHeight = 8;
-    const wallThick = 1;
-    const wallDefs = [
-      [0, wallHeight/2, -worldBounds, worldBounds*2, wallHeight, wallThick],
-      [0, wallHeight/2, worldBounds, worldBounds*2, wallHeight, wallThick],
-      [-worldBounds, wallHeight/2, 0, wallThick, wallHeight, worldBounds*2],
-      [worldBounds, wallHeight/2, 0, wallThick, wallHeight, worldBounds*2],
-    ];
-    wallDefs.forEach(([x,y,z,w,h,d])=>{
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wallMat);
-      m.position.set(x,y,z);
-      m.receiveShadow = true;
-      scene.add(m);
-    });
-
-    // Scattered lab equipment cabinets with glowing accent strips
-    const pillarPalette = [0xe8eef2, 0xd7dee4, 0xc9d2da];
-    const stripPalette = [0x2fa5e0, 0x2fe0c5, 0xe02f4b];
-    for(let i=0;i<10;i++){
-      const h = 2 + Math.random()*2.5;
-      const paletteIdx = i % pillarPalette.length;
-      const pillarMat = new THREE.MeshStandardMaterial({ color:pillarPalette[paletteIdx], roughness:0.75, metalness:0.2 });
-      const geo = new THREE.BoxGeometry(1.4, h, 1.4);
-      const m = new THREE.Mesh(geo, pillarMat);
-      let px, pz;
-      do {
-        px = (Math.random()-0.5) * (worldBounds*1.6);
-        pz = (Math.random()-0.5) * (worldBounds*1.6);
-      } while (Math.hypot(px, pz) < 5);
-      m.position.set(px, h/2, pz);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      scene.add(m);
-      // glowing accent strip
-      const strip = new THREE.Mesh(
-        new THREE.BoxGeometry(1.42, 0.08, 1.42),
-        new THREE.MeshBasicMaterial({ color: stripPalette[i % stripPalette.length] })
-      );
-      strip.position.set(px, h*0.65, pz);
-      scene.add(strip);
-    }
-
-    // Fake volumetric light cones under each ceiling lamp
-    const glowTex = makeGlowTexture();
-    lampSpots.forEach(([x,y,z,c])=>{
-      const cone = new THREE.Mesh(
-        new THREE.ConeGeometry(2.2, 5.5, 24, 1, true),
-        new THREE.MeshBasicMaterial({ map:glowTex, color:c, transparent:true, opacity:0.16, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide })
-      );
-      cone.position.set(x, y - 2.7, z);
-      scene.add(cone);
-    });
-
-    // Floating dust motes for atmosphere
-    const dustCount = 260;
-    const dustGeo = new THREE.BufferGeometry();
-    const dustPos = new Float32Array(dustCount*3);
-    for(let i=0;i<dustCount;i++){
-      dustPos[i*3] = (Math.random()-0.5) * worldBounds*1.8;
-      dustPos[i*3+1] = Math.random() * 6;
-      dustPos[i*3+2] = (Math.random()-0.5) * worldBounds*1.8;
-    }
-    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-    const dustMat = new THREE.PointsMaterial({ size:0.045, map:glowTex, color:0xbfe0ff, transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending });
-    dustPoints = new THREE.Points(dustGeo, dustMat);
-    scene.add(dustPoints);
-
-    // Weapon (simple gun model attached to camera)
-    const gunGroup = new THREE.Group();
-    const gunBody = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.14, 0.55),
-      new THREE.MeshStandardMaterial({ color:0x2b2f33, metalness:0.75, roughness:0.3 })
-    );
-    gunBody.position.set(0.28, -0.28, -0.6);
-    gunGroup.add(gunBody);
-    const gunAccent = new THREE.Mesh(
-      new THREE.BoxGeometry(0.02, 0.02, 0.5),
-      new THREE.MeshBasicMaterial({ color:0x35e0a0 })
-    );
-    gunAccent.position.set(0.34, -0.24, -0.6);
-    gunGroup.add(gunAccent);
-    muzzleFlashMesh = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map:glowTex, color:0xfff3b0, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false })
-    );
-    muzzleFlashMesh.scale.set(0.5, 0.5, 0.5);
-    muzzleFlashMesh.position.set(0.28, -0.28, -0.9);
-    gunGroup.add(muzzleFlashMesh);
-    muzzleLight = new THREE.PointLight(0xffdd88, 0, 6, 2);
-    muzzleLight.position.set(0.28, -0.28, -0.9);
-    gunGroup.add(muzzleLight);
-    gunMesh = gunGroup;
-    camera.add(gunMesh);
-    scene.add(camera);
-
-    window.addEventListener('resize', onResize);
-  }
-
-  function onResize(){
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-
-  // ---------- Enemies ----------
-  function beginWave(n){
-    wave = n;
-    document.getElementById('waveText').textContent = 'WAVE ' + wave;
-    const count = 2 + wave; // increasing difficulty
-    enemiesRemainingInWave = count;
-    for(let i=0;i<count;i++){
-      spawnEnemy();
     }
   }
+}
 
-  function advanceToWave(n){
-    const beat = STORY_BEATS.find(b=>b.wave===n);
-    if(beat){
-      gameActive = false;
-      showCutscene(beat.who, beat.text, ()=>{
-        gameActive = true;
-        beginWave(n);
-      }, 4200, beat.art);
+function updateBursts(dt){
+  for (let i = bursts.length - 1; i >= 0; i--){
+    const b = bursts[i];
+    b.age += dt;
+    const arr = b.points.geometry.attributes.position.array;
+    for (let k=0;k<b.vels.length;k++){
+      arr[k*3]   += b.vels[k].x;
+      arr[k*3+1] += b.vels[k].y;
+      arr[k*3+2] += b.vels[k].z;
+    }
+    b.points.geometry.attributes.position.needsUpdate = true;
+    b.points.material.opacity = Math.max(0, 1 - b.age/b.life);
+    if (b.age >= b.life){
+      scene.remove(b.points);
+      bursts.splice(i, 1);
+    }
+  }
+}
+
+// ---------- 보스 ----------
+const KILLS_FOR_BOSS = 15;
+let boss = null;
+let bossTriggered = false;
+const bossBarEl = document.getElementById('bossBar');
+const bossFillEl = document.getElementById('bossFill');
+const bossMsgEl = document.getElementById('bossMsg');
+
+function buildBossMesh(){
+  const m = new THREE.Group();
+  const coreMat = new THREE.MeshStandardMaterial({color:0x2a0f1f, metalness:0.6, roughness:0.35, flatShading:true});
+  const eyeMat = new THREE.MeshStandardMaterial({color:0xff3d5a, emissive:0xff1f3d, emissiveIntensity:1.6, flatShading:true});
+  const spikeMat = new THREE.MeshStandardMaterial({color:0xffb020, emissive:0xff8a1f, emissiveIntensity:1.1, flatShading:true});
+  const wingMat = new THREE.MeshStandardMaterial({color:0x5a1f3a, metalness:0.5, roughness:0.4, flatShading:true});
+
+  const core = new THREE.Mesh(new THREE.SphereGeometry(2.2, 10, 8), coreMat);
+  core.scale.set(1.3, 0.9, 1.1);
+  m.add(core);
+
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), eyeMat);
+  eye.position.set(0, 0.3, -1.9);
+  m.add(eye);
+
+  // 원형으로 배치한 포탑 스파이크 6개
+  for (let i=0;i<6;i++){
+    const ang = (i/6)*Math.PI*2;
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.1, 5), spikeMat);
+    sp.position.set(Math.cos(ang)*2.3, Math.sin(ang)*1.4, 0.2);
+    sp.rotation.z = ang + Math.PI/2;
+    m.add(sp);
+  }
+
+  const wingGeo = new THREE.BoxGeometry(3.6, 0.25, 2.0);
+  const wingL = new THREE.Mesh(wingGeo, wingMat);
+  wingL.position.set(-3.2, 0, 0.6);
+  wingL.rotation.z = 0.12;
+  m.add(wingL);
+  const wingR = wingL.clone();
+  wingR.position.x = 3.2;
+  wingR.rotation.z = -0.12;
+  m.add(wingR);
+
+  return m;
+}
+
+function spawnBoss(){
+  const mesh = buildBossMesh();
+  mesh.position.set(0, 2, -90);
+  scene.add(mesh);
+  boss = {
+    mesh, hp: 700, max: 700, phase: 'approach', dir: 1, t: 0, shootTimer: 0,
+    phase2: false, patternIdx: 0, patternTimer: 0, cycleTimer: 0, burstCount: 0,
+  };
+  bossBarEl.style.display = 'block';
+  bossFillEl.style.width = '100%';
+  bossMsgEl.textContent = I18N[currentLang].bossAppear;
+  bossMsgEl.style.opacity = '1';
+  setTimeout(() => { bossMsgEl.style.opacity = '0'; }, 1400);
+  showComm(I18N[currentLang].commBossAppear, 'SOS');
+}
+
+function maybeSpawnBoss(){
+  if (!boss && !bossTriggered && kills >= KILLS_FOR_BOSS){
+    bossTriggered = true;
+    spawnBoss();
+  }
+}
+
+// ---------- 스테이지 ----------
+let stage = 1;
+const FINAL_STAGE = 5;
+const STAGE_BG = {
+  1: 0x04060f,   // 어두운 네이비 (우주)
+  2: 0x5b0a12,   // 빨강
+  3: 0x0a3a1c,   // 초록
+  4: 0x062b5f,   // 파랑
+  5: 0x1a0f2e,   // 최종 스테이지 — 짙은 보라 전조
+};
+function setStageBackground(s){
+  const color = new THREE.Color(STAGE_BG[s] ?? 0x04060f);
+  scene.background = color;
+  scene.fog.color = color;
+}
+// ---------- 팀원 무전 (스타폭스 스타일 코멘트 박스) ----------
+const commBoxEl = document.getElementById('commBox');
+const commLineEl = document.getElementById('commLine');
+const commMorseEl = document.getElementById('commMorse');
+let commTimer = null;
+// ---------- 무전 효과음: 진짜 모스부호로 삐빅 (파일 없이 합성) ----------
+let audioCtx = null;
+function ensureAudio(){
+  if (!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+const MORSE_MAP = {
+  A:'.-', B:'-...', C:'-.-.', D:'-..', E:'.', F:'..-.', G:'--.', H:'....',
+  I:'..', J:'.---', K:'-.-', L:'.-..', M:'--', N:'-.', O:'---', P:'.--.',
+  Q:'--.-', R:'.-.', S:'...', T:'-', U:'..-', V:'...-', W:'.--', X:'-..-',
+  Y:'-.--', Z:'--..',
+  '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-',
+  '5':'.....','6':'-....','7':'--...','8':'---..','9':'----.',
+};
+
+function beep(t0, dur, freq){
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.005);
+  gain.gain.setValueAtTime(0.16, Math.max(t0 + 0.005, t0 + dur - 0.012));
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+}
+
+function playMorse(text, unit = 0.075, freq = 900, startDelay = 0){
+  if (!audioCtx) return;
+  let t = audioCtx.currentTime + startDelay;
+  text.toUpperCase().split('').forEach(ch => {
+    if (ch === ' '){ t += unit*7; return; } // 단어 사이 간격
+    const code = MORSE_MAP[ch];
+    if (!code) return;
+    for (let i=0;i<code.length;i++){
+      const dur = code[i] === '-' ? unit*3 : unit;
+      beep(t, dur, freq);
+      t += dur + unit; // 점/대시 사이 간격 = 1 unit
+    }
+    t += unit*2; // 문자 사이 간격 = 총 3 unit (이미 더한 1unit + 2unit)
+  });
+}
+
+function playStatic(duration = 0.18){
+  if (!audioCtx) return;
+  const bufferSize = Math.max(1, Math.floor(audioCtx.sampleRate * duration));
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i=0;i<bufferSize;i++){
+    data[i] = (Math.random()*2 - 1) * (1 - i/bufferSize); // 화이트노이즈, 서서히 감쇠
+  }
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 1800;
+  filter.Q.value = 0.7;
+
+  const gain = audioCtx.createGain();
+  const t0 = audioCtx.currentTime;
+  gain.gain.setValueAtTime(0.4, t0);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+
+  noise.connect(filter).connect(gain).connect(audioCtx.destination);
+  noise.start(t0);
+  noise.stop(t0 + duration + 0.02);
+}
+
+function textToMorseString(text){
+  return text.toUpperCase().split('').map(ch => ch === ' ' ? '/' : (MORSE_MAP[ch] || '')).join(' ').trim();
+}
+
+function showComm(text, morse = 'SOS', holdMs = 2600){
+  commLineEl.textContent = text;
+  commMorseEl.textContent = textToMorseString(morse);
+  commBoxEl.classList.add('show');
+  const staticDur = 0.16;
+  playStatic(staticDur);
+  playMorse(morse, 0.075, 900, staticDur*0.6); // 치직거리는 잡음이 끝나갈 때쯤 모스 신호가 겹치며 시작
+  clearTimeout(commTimer);
+  commTimer = setTimeout(() => { commBoxEl.classList.remove('show'); }, holdMs);
+}
+
+function advanceStage(){
+  stage++;
+  kills = 0;
+  spawnTimer = 0;
+  bossTriggered = false;
+
+  // 하이퍼스페이스 워프: 별이 확 빨라지며 다음 구역으로 이동하는 연출
+  warpSpeed = 6.5;
+  const lang = I18N[currentLang];
+  bossMsgEl.textContent = lang.warping;
+  bossMsgEl.style.opacity = '1';
+
+  setTimeout(() => {
+    setStageBackground(stage);
+    bossMsgEl.textContent = `${lang.stageWord} ${stage}`;
+    const commLine = lang.stageComms[stage] || lang.stageEnterFallback.replace('{n}', stage);
+    showComm(commLine, 'GO');
+  }, 900);
+
+  setTimeout(() => {
+    warpSpeed = 0.18;
+    bossMsgEl.style.opacity = '0';
+  }, 1900);
+}
+
+// ---------- 엔딩 (스테이지 5 보스 격파) ----------
+const purpleWashEl = document.getElementById('purpleWash');
+const endingMsgEl = document.getElementById('endingMsg');
+let inEnding = false;
+let endingT = 0;
+let endingShown = false;
+
+// ---------- 엔딩용 지구 ----------
+let earthMesh = null;
+let earthOceanMat = null, earthContinentMat = null;
+
+function buildEarth(){
+  const g = new THREE.Group();
+
+  earthOceanMat = new THREE.MeshStandardMaterial({color:0x6a1f9e, emissive:0x3a0f5e, emissiveIntensity:0.4, flatShading:true, roughness:0.6});
+  const ocean = new THREE.Mesh(new THREE.SphereGeometry(5, 16, 12), earthOceanMat);
+  g.add(ocean);
+
+  earthContinentMat = new THREE.MeshStandardMaterial({color:0x3a1050, flatShading:true, roughness:0.7});
+  for (let i=0;i<8;i++){
+    const patch = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0 + Math.random()*0.7, 0), earthContinentMat);
+    const lat = (Math.random()-0.5)*Math.PI*0.85;
+    const lon = Math.random()*Math.PI*2;
+    const r = 4.6;
+    patch.position.set(r*Math.cos(lat)*Math.cos(lon), r*Math.sin(lat), r*Math.cos(lat)*Math.sin(lon));
+    g.add(patch);
+  }
+
+  const cloud = new THREE.Mesh(new THREE.SphereGeometry(5.25, 14, 10), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.12}));
+  g.add(cloud);
+
+  return g;
+}
+
+function triggerEnding(){
+  inEnding = true;
+  endingT = 0;
+  endingShown = false;
+  bossMsgEl.style.opacity = '0';
+
+  if (!earthMesh){
+    earthMesh = buildEarth();
+    scene.add(earthMesh);
+  }
+  earthMesh.visible = true;
+  earthMesh.position.set(0, 1.5, -34);
+  earthMesh.scale.setScalar(0.05);
+  earthMesh.rotation.y = 0;
+  earthOceanMat.color.set(0x6a1f9e);
+  earthOceanMat.emissive.set(0x3a0f5e);
+  earthContinentMat.color.set(0x3a1050);
+
+  purpleWashEl.style.opacity = '0.5'; // 화면 톤도 함께 보라빛으로
+}
+
+const EARTH_GROW_DUR = 1.6;   // 보라 지구 확대 등장
+const EARTH_HEAL_DUR = 2.6;   // 보라 -> 정상 지구로 색이 돌아오는 시간
+const EARTH_HOLD = 0.6;       // 다 돌아온 뒤 잠깐 유지
+
+function updateEnding(dt){
+  if (!inEnding) return;
+  endingT += dt;
+
+  // 보라 지구가 확대되며 등장
+  const growK = Math.min(1, endingT/EARTH_GROW_DUR);
+  earthMesh.scale.setScalar(0.05 + growK*0.95);
+  earthMesh.rotation.y += dt*0.15;
+
+  // 등장이 끝나면 보라 -> 정상(파랑/초록) 지구로 색이 서서히 돌아옴
+  if (endingT > EARTH_GROW_DUR){
+    const k = Math.min(1, (endingT - EARTH_GROW_DUR)/EARTH_HEAL_DUR);
+    earthOceanMat.color.copy(new THREE.Color(0x6a1f9e)).lerp(new THREE.Color(0x1f6fa8), k);
+    earthOceanMat.emissive.copy(new THREE.Color(0x3a0f5e)).lerp(new THREE.Color(0x08141f), k);
+    earthContinentMat.color.copy(new THREE.Color(0x3a1050)).lerp(new THREE.Color(0x2f8f4f), k);
+    purpleWashEl.style.opacity = String(0.5*(1-k));
+  }
+
+  const total = EARTH_GROW_DUR + EARTH_HEAL_DUR + EARTH_HOLD;
+  if (endingT > total && !endingShown){
+    endingShown = true;
+    endingMsgEl.style.display = 'flex';
+  }
+}
+
+function updateBoss(dt){
+  if (!boss) return;
+  const me = boss.mesh;
+
+  if (boss.phase === 'approach'){
+    me.position.z += 0.32;
+    if (me.position.z >= -14) boss.phase = 'fight';
+    return;
+  }
+
+  if (boss.phase === 'fight'){
+    // 체력 50% 이하 -> 레이지(2페이즈) 진입, 1회성
+    if (!boss.phase2 && boss.hp <= boss.max*0.5){
+      boss.phase2 = true;
+      bossMsgEl.textContent = I18N[currentLang].bossRage;
+      bossMsgEl.style.opacity = '1';
+      setTimeout(() => { bossMsgEl.style.opacity = '0'; }, 1200);
+      showComm(I18N[currentLang].commBossRage, 'WARN');
+    }
+    const rageMul = boss.phase2 ? 1.5 : 1;
+
+    boss.t += dt;
+    me.position.x = Math.sin(boss.t*0.55*rageMul) * (boss.phase2 ? 6.2 : 5.5);
+    me.rotation.y = Math.sin(boss.t*0.55*rageMul) * 0.18;
+    me.rotation.z = Math.sin(boss.t*1.3*rageMul) * 0.05;
+
+    // 패턴 순환: 0=부채꼴 탄막, 1=조준 연발, 2=원형 탄막
+    boss.cycleTimer++;
+    const cycleGap = boss.phase2 ? 130 : 190;
+    if (boss.cycleTimer > cycleGap){
+      boss.cycleTimer = 0;
+      boss.patternIdx = (boss.patternIdx + 1) % 3;
+      boss.patternTimer = 0;
+      boss.burstCount = 0;
+    }
+    boss.patternTimer++;
+    const gapMul = boss.phase2 ? 0.65 : 1;
+
+    if (boss.patternIdx === 0){
+      // 부채꼴 탄막
+      const gap = Math.round(55*gapMul);
+      if (boss.patternTimer > gap){
+        boss.patternTimer = 0;
+        const spread = boss.phase2 ? 6 : 4;
+        for (let i=-spread;i<=spread;i+=2){
+          const dir = new THREE.Vector3(i*0.16, -0.08, 1).normalize();
+          spawnEnemyBolt(new THREE.Vector3(me.position.x, me.position.y-0.3, me.position.z), dir.multiplyScalar(0.26));
+        }
+      }
+    } else if (boss.patternIdx === 1){
+      // 조준 연발
+      const maxBurst = boss.phase2 ? 5 : 3;
+      const gap = Math.round(22*gapMul);
+      if (boss.burstCount < maxBurst && boss.patternTimer > gap){
+        boss.patternTimer = 0;
+        boss.burstCount++;
+        const dir = new THREE.Vector3(jet.position.x-me.position.x, jet.position.y-me.position.y, jet.position.z-me.position.z).normalize();
+        spawnEnemyBolt(me.position, dir.multiplyScalar(0.34));
+      }
     } else {
-      beginWave(n);
-    }
-  }
-
-  function spawnEnemy(){
-    const clothColor = ENEMY_COLORS[(wave-1) % ENEMY_COLORS.length];
-    const skinColor = 0xd9a679;
-    const pantsColor = 0x2a2e33;
-    const bootColor = 0x141416;
-    const hoodColor = 0x141416;
-    const isMutantWave = wave >= 4;
-    const clothMat = new THREE.MeshStandardMaterial({ color:clothColor, roughness:0.6, metalness:0.05 });
-    const pantsMat = new THREE.MeshStandardMaterial({ color:pantsColor, roughness:0.7 });
-    const bootMat = new THREE.MeshStandardMaterial({ color:bootColor, roughness:0.5, metalness:0.2 });
-    const hoodMat = new THREE.MeshStandardMaterial({ color:hoodColor, roughness:0.75 });
-    const skinMat = new THREE.MeshStandardMaterial({
-      color:skinColor, roughness:0.65,
-      emissive: isMutantWave ? 0x8a1f3a : 0x000000,
-      emissiveIntensity: isMutantWave ? 0.35 : 0
-    });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: isMutantWave ? 0xff8833 : 0xff5544 });
-
-    const group = new THREE.Group();
-    const bodyGroup = new THREE.Group(); // all limbs/torso live here for hit-testing
-
-    // boots
-    const bootGeo = new THREE.CylinderGeometry(0.13, 0.15, 0.2, 8);
-    const bootL = new THREE.Mesh(bootGeo, bootMat);
-    bootL.position.set(0.12, 0.1, 0.03);
-    bootL.castShadow = true;
-    bodyGroup.add(bootL);
-    const bootR = bootL.clone();
-    bootR.position.x = -0.12;
-    bodyGroup.add(bootR);
-
-    // legs (pants, mostly hidden under the long coat)
-    const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.4, 10), pantsMat);
-    legs.position.y = 0.4;
-    legs.castShadow = true;
-    bodyGroup.add(legs);
-
-    // long coat (torso extends down over the hips like the reference image)
-    const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.95, 10), clothMat);
-    coat.position.y = 1.0;
-    coat.castShadow = true;
-    bodyGroup.add(coat);
-    const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 12), clothMat);
-    shoulder.position.y = 1.42;
-    shoulder.castShadow = true;
-    bodyGroup.add(shoulder);
-
-    // belt
-    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.08, 12), bootMat);
-    belt.position.y = 0.86;
-    bodyGroup.add(belt);
-
-    // arms (coat-colored sleeves) + skin-tone hands
-    const armGeo = new THREE.CylinderGeometry(0.09, 0.095, 0.62, 8);
-    const handGeo = new THREE.SphereGeometry(0.075, 8, 8);
-    const armL = new THREE.Mesh(armGeo, clothMat);
-    armL.position.set(0.36, 1.1, 0);
-    armL.rotation.z = 0.18;
-    armL.castShadow = true;
-    bodyGroup.add(armL);
-    const handL = new THREE.Mesh(handGeo, skinMat);
-    handL.position.set(0.42, 0.81, 0.02);
-    bodyGroup.add(handL);
-    const armR = new THREE.Mesh(armGeo, clothMat);
-    armR.position.set(-0.36, 1.1, 0);
-    armR.rotation.z = -0.18;
-    armR.castShadow = true;
-    bodyGroup.add(armR);
-    const handR = handL.clone();
-    handR.position.x = -0.42;
-    bodyGroup.add(handR);
-
-    group.add(bodyGroup);
-
-    // head, mostly shadowed under a hood — only the glowing eyes read clearly
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 14), skinMat);
-    head.position.y = 1.7;
-    head.castShadow = true;
-    group.add(head);
-    // hood: larger dark shell over the top/back/sides, open at the front like the reference photo
-    const hood = new THREE.Mesh(
-      new THREE.SphereGeometry(0.27, 14, 14, 0, Math.PI*2, 0, Math.PI*0.62),
-      hoodMat
-    );
-    hood.position.y = 1.74;
-    hood.castShadow = true;
-    group.add(hood);
-    const hoodRim = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 6, 14), hoodMat);
-    hoodRim.position.y = 1.62;
-    hoodRim.rotation.x = Math.PI/2;
-    group.add(hoodRim);
-    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), eyeMat);
-    eyeL.position.set(0.08, 1.7, -0.19);
-    group.add(eyeL);
-    const eyeR = eyeL.clone();
-    eyeR.position.x = -0.08;
-    group.add(eyeR);
-
-    // slight silhouette variety so enemies don't look cloned
-    const scaleVar = 0.94 + Math.random()*0.16;
-    group.scale.set(scaleVar, scaleVar*(0.97+Math.random()*0.08), scaleVar);
-
-    let ex, ez;
-    do {
-      ex = (Math.random()-0.5) * (worldBounds*1.7);
-      ez = (Math.random()-0.5) * (worldBounds*1.7);
-    } while (Math.hypot(ex - camera.position.x, ez - camera.position.z) < 10);
-    group.position.set(ex, 0, ez);
-    scene.add(group);
-
-    enemies.push({
-      mesh: group,
-      head: head,
-      armL: armL,
-      armR: armR,
-      color: clothColor,
-      hp: 30 + wave*6,
-      maxHp: 30 + wave*6,
-      speed: 1.1 + Math.random()*0.6 + wave*0.05,
-      lastAttack: 0,
-      walkPhase: Math.random()*10,
-      alive: true
-    });
-  }
-
-  function spawnDeathParticles(position, colorHex){
-    const count = 14;
-    for(let i=0;i<count;i++){
-      const size = 0.06 + Math.random()*0.08;
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(size, size, size),
-        new THREE.MeshBasicMaterial({ color: colorHex, blending:THREE.AdditiveBlending, depthWrite:false })
-      );
-      mesh.position.copy(position);
-      mesh.position.y += 0.9;
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 1.5 + Math.random()*2.5;
-      const vel = new THREE.Vector3(
-        Math.cos(angle) * speed,
-        2 + Math.random()*3,
-        Math.sin(angle) * speed
-      );
-      scene.add(mesh);
-      particles.push({ mesh, vel, ttl: 0.7 + Math.random()*0.4 });
-    }
-  }
-
-  function updateParticles(dt){
-    for(let i=particles.length-1; i>=0; i--){
-      const p = particles[i];
-      p.vel.y -= 9.8 * dt;
-      p.mesh.position.addScaledVector(p.vel, dt);
-      p.ttl -= dt;
-      p.mesh.material.opacity = Math.max(0, p.ttl / 1.1);
-      p.mesh.material.transparent = true;
-      p.mesh.rotation.x += dt*6;
-      p.mesh.rotation.y += dt*4;
-      if(p.ttl <= 0){
-        scene.remove(p.mesh);
-        particles.splice(i,1);
+      // 원형 탄막
+      const gap = Math.round(150*gapMul);
+      if (boss.patternTimer > gap){
+        boss.patternTimer = 0;
+        const n = boss.phase2 ? 12 : 8;
+        for (let k=0;k<n;k++){
+          const ang = (k/n)*Math.PI*2;
+          const dir = new THREE.Vector3(Math.cos(ang), Math.sin(ang)*0.5, 0.6).normalize();
+          spawnEnemyBolt(me.position, dir.multiplyScalar(0.22));
+        }
       }
     }
-  }
 
-  function updateDust(dt){
-    if(!dustPoints) return;
-    const pos = dustPoints.geometry.attributes.position.array;
-    for(let i=0;i<pos.length;i+=3){
-      pos[i+1] += dt * 0.15;
-      if(pos[i+1] > 6) pos[i+1] = 0;
-    }
-    dustPoints.geometry.attributes.position.needsUpdate = true;
-  }
-
-  function damageEnemy(enemy, amount, headshot){
-    enemy.hp -= amount;
-    if(enemy.hp <= 0 && enemy.alive){
-      enemy.alive = false;
-      spawnDeathParticles(enemy.mesh.position, enemy.color);
-      scene.remove(enemy.mesh);
-      score += headshot ? 150 : 100;
-      document.getElementById('scoreText').textContent = 'SCORE ' + score;
-      enemiesRemainingInWave--;
-      if(enemiesRemainingInWave <= 0){
-        setTimeout(()=>{
-          if(!gameActive) return;
-          if(wave >= 4){
-            gameActive = false;
-            showCutscene('통제실', WIN_TEXT, ()=> winGame(), 6000, 'win');
+    for (let j = bolts.length - 1; j >= 0; j--){
+      const bl = bolts[j];
+      if (bl.position.distanceTo(me.position) < 2.6){
+        scene.remove(bl);
+        bolts.splice(j, 1);
+        boss.hp -= (bl.userData.dmg || 1);
+        score += 40;
+        spawnBurst(bl.position, 0xffdf6b);
+        bossFillEl.style.width = Math.max(0, boss.hp/boss.max*100) + '%';
+        if (boss.hp <= 0){
+          if (stage >= FINAL_STAGE){
+            boss.phase = 'explode';
+            boss.t = 0;
+            boss.exploded = false;
+            score += 5000;
+            bossMsgEl.textContent = I18N[currentLang].bossDestroyed;
+            bossMsgEl.style.opacity = '1';
           } else {
-            advanceToWave(wave+1);
+            boss.phase = 'retreat';
+            boss.t = 0;
+            score += 2000;
+            bossMsgEl.textContent = I18N[currentLang].bossRetreat;
+            bossMsgEl.style.opacity = '1';
+            setTimeout(() => { bossMsgEl.style.opacity = '0'; }, 1400);
           }
-        }, 1400);
+        }
+        break;
       }
     }
+    return;
   }
 
-  function updateEnemies(dt){
-    const camPos = camera.position;
-    enemies.forEach(e=>{
-      if(!e.alive) return;
-      const dx = camPos.x - e.mesh.position.x;
-      const dz = camPos.z - e.mesh.position.z;
-      const dist = Math.hypot(dx, dz);
-      if(dist > 1.2){
-        const nx = dx/dist, nz = dz/dist;
-        e.mesh.position.x += nx * e.speed * dt;
-        e.mesh.position.z += nz * e.speed * dt;
-        e.mesh.rotation.y = Math.atan2(nx, nz);
-        e.walkPhase += dt * e.speed * 4;
-        const swing = Math.sin(e.walkPhase) * 0.5;
-        e.armL.rotation.x = swing;
-        e.armR.rotation.x = -swing;
+  if (boss.phase === 'retreat'){
+    boss.t += dt;
+    me.position.z -= 0.9 + boss.t*0.6;   // 갈수록 빠르게 도망
+    me.position.y += 0.06;
+    me.scale.multiplyScalar(0.975);
+    if (Math.random() < 0.35) spawnBurst(me.position, 0xffb84d);
+    if (boss.t > 1.5 || me.position.z < -140){
+      scene.remove(me);
+      boss = null;
+      bossBarEl.style.display = 'none';
+      advanceStage();
+    }
+    return;
+  }
+
+  if (boss.phase === 'explode'){
+    boss.t += dt;
+    if (Math.random() < 0.7) spawnBurst(me.position.clone().add(new THREE.Vector3((Math.random()-0.5)*3,(Math.random()-0.5)*2,(Math.random()-0.5)*3)), 0xffdf6b);
+    if (boss.t > 0.55 && !boss.exploded){
+      boss.exploded = true;
+      for (let k=0;k<14;k++){
+        spawnBurst(me.position.clone().add(new THREE.Vector3((Math.random()-0.5)*5,(Math.random()-0.5)*4,(Math.random()-0.5)*5)), k%2 ? 0xffb04d : 0xff5566);
+      }
+      scene.remove(me);
+    }
+    if (boss.t > 1.1){
+      boss = null;
+      bossBarEl.style.display = 'none';
+      triggerEnding();
+    }
+  }
+}
+
+let score = 0, kills = 0;
+const hudTip = document.getElementById('tip');
+function updateHud(){
+  const lang = I18N[currentLang];
+  const bossNote = boss ? ` · ${lang.hudBossFight}` : ` · ${lang.hudBossIn.replace('{n}', Math.max(0, KILLS_FOR_BOSS - kills))}`;
+  const shipName = shipConfig ? lang.ships[shipConfig.id].name : '';
+  hudTip.textContent = `${lang.stageWord} ${stage} · ${shipName}${shipConfig ? ' Lv.'+weaponLevel : ''} · ${lang.hudSpecial} · SCORE ${score} · KILL ${kills}${bossNote}`;
+}
+
+// 엔진 트레일 파티클
+const trailGeo = new THREE.BufferGeometry();
+const TRAIL_N = 60;
+const trailPos = new Float32Array(TRAIL_N*3);
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos,3));
+const trail = new THREE.Points(trailGeo, new THREE.PointsMaterial({color:0x7fd8ff,size:0.18,transparent:true,opacity:0.85}));
+scene.add(trail);
+let trailIdx = 0;
+
+// ---------- 조이스틱 입력 (기존 2D 게임과 동일한 UX) ----------
+const inp = {jx:0, jy:0};
+const joy = document.getElementById('joy');
+const joyKnob = document.getElementById('joyKnob');
+let joyPointer = null;
+
+function setJoyFromEvent(e){
+  const r = joy.getBoundingClientRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  let dx = e.clientX - cx, dy = e.clientY - cy;
+  const max = 36;
+  const len = Math.hypot(dx,dy);
+  if (len > max){ dx = dx/len*max; dy = dy/len*max; }
+  joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
+  const dead = 6;
+  inp.jx = Math.abs(dx) < dead ? 0 : dx/max;
+  inp.jy = Math.abs(dy) < dead ? 0 : dy/max;
+}
+function resetJoy(){ joyPointer=null; inp.jx=0; inp.jy=0; joyKnob.style.transform='translate(0,0)'; }
+joy.onpointerdown = e => { e.preventDefault(); joyPointer=e.pointerId; joy.setPointerCapture?.(e.pointerId); setJoyFromEvent(e); };
+joy.onpointermove = e => { if (e.pointerId===joyPointer) setJoyFromEvent(e); };
+joy.onpointerup = joy.onpointercancel = e => { if (e.pointerId===joyPointer) resetJoy(); };
+
+const key = {};
+onkeydown = e => { key[e.key.toLowerCase()] = 1; if (e.key===' ') e.preventDefault(); };
+onkeyup   = e => key[e.key.toLowerCase()] = 0;
+
+// ---------- 발사 버튼 (A) ----------
+const inp2 = {a:0};
+const fireBtn = document.getElementById('fireBtn');
+function setFireBtn(v){ inp2.a = v; fireBtn.classList.toggle('on', !!v); }
+fireBtn.onpointerdown = e => { e.preventDefault(); fireBtn.setPointerCapture?.(e.pointerId); setFireBtn(1); };
+fireBtn.onpointerup = fireBtn.onpointercancel = fireBtn.onpointerleave = () => setFireBtn(0);
+
+// ---------- 발사 이펙트 ----------
+const boltGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.75, 6);
+const laserGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.35, 6);
+const bolts = []; // THREE.Mesh[] (userData: {vx, dmg})
+const BOLT_SPEED = 0.62;
+
+// 총구 섬광용 포인트라이트 (짧게 반짝였다 사라짐)
+const muzzleLight = new THREE.PointLight(0x9fefff, 0, 6);
+scene.add(muzzleLight);
+let muzzleTimer = 0;
+
+let lastShot = 0;
+function fireBolt(){
+  if (!shipConfig) return;
+  const now = performance.now();
+  if (now - lastShot < shipConfig.fireGap) return;
+  lastShot = now;
+
+  const geo = shipConfig.laser ? laserGeo : boltGeo;
+  shipConfig.pattern(weaponLevel).forEach(shot => {
+    const m = new THREE.Mesh(geo, shipConfig.boltMat);
+    m.rotation.x = Math.PI/2;
+    m.position.set(jet.position.x + shot.dx, jet.position.y + 0.05, jet.position.z - 1.6);
+    m.userData.vx = shot.vx || 0;
+    m.userData.dmg = shipConfig.boltDamage;
+    scene.add(m);
+    bolts.push(m);
+  });
+
+  muzzleLight.color.set(shipConfig.boltColor);
+  muzzleLight.position.set(jet.position.x, jet.position.y, jet.position.z - 1.8);
+  muzzleLight.intensity = 3.2;
+  muzzleTimer = 0.09;
+}
+
+function updateBolts(dt){
+  for (let i = bolts.length - 1; i >= 0; i--){
+    const m = bolts[i];
+    m.position.z -= BOLT_SPEED;
+    m.position.x += m.userData.vx || 0;
+    if (m.position.z < -70){
+      scene.remove(m);
+      bolts.splice(i, 1);
+    }
+  }
+  if (muzzleTimer > 0){
+    muzzleTimer -= dt;
+    muzzleLight.intensity = Math.max(0, muzzleTimer/0.09) * 3.2;
+  }
+}
+
+// ---------- 필살기 (폭탄) ----------
+const BOMB_MAX = 5;
+let bombCharges = 2;
+let bombLock = false;
+const bombFlashEl = document.getElementById('bombFlash');
+const bombPipsEl = document.getElementById('bombPips');
+
+function updateBombPips(){
+  bombPipsEl.innerHTML = '';
+  for (let i=0;i<BOMB_MAX;i++){
+    const p = document.createElement('div');
+    p.className = 'pip' + (i < bombCharges ? ' on' : '');
+    bombPipsEl.appendChild(p);
+  }
+}
+updateBombPips();
+
+const shockGeo = new THREE.SphereGeometry(1, 12, 8);
+const shocks = []; // {mesh, t}
+
+function useBomb(){
+  if (!gameStarted || gameOver || inEnding || bombLock) return;
+  if (bombCharges <= 0) return;
+  bombLock = true;
+  setTimeout(() => { bombLock = false; }, 600);
+
+  bombCharges--;
+  updateBombPips();
+
+  // 화면 안의 적 탄환 전부 제거 (회피)
+  enemyBolts.forEach(eb => scene.remove(eb.mesh));
+  enemyBolts.length = 0;
+
+  // 화면 안의 몬스터 전부 격추
+  for (let i = monsters.length - 1; i >= 0; i--){
+    const mo = monsters[i];
+    spawnBurst(mo.mesh.position, mo.type.burst);
+    scene.remove(mo.mesh);
+    monsters.splice(i, 1);
+    kills++;
+    score += 50;
+  }
+
+  // 보스가 있으면 큰 피해
+  if (boss && boss.phase === 'fight'){
+    boss.hp -= 60;
+    spawnBurst(boss.mesh.position, 0xffdf6b);
+    bossFillEl.style.width = Math.max(0, boss.hp/boss.max*100) + '%';
+    if (boss.hp <= 0){
+      if (stage >= FINAL_STAGE){
+        boss.phase = 'explode'; boss.t = 0; boss.exploded = false;
+        score += 5000;
       } else {
-        const now = performance.now();
-        if(now - e.lastAttack > 900){
-          e.lastAttack = now;
-          takeDamage(8 + Math.floor(wave*1.2));
-        }
-      }
-    });
-  }
-
-  // ---------- Player ----------
-  function takeDamage(amount){
-    player.health = Math.max(0, player.health - amount);
-    updateHealthUI();
-    const vg = document.getElementById('damageVignette');
-    vg.style.boxShadow = 'inset 0 0 160px 40px rgba(255,0,0,0.55)';
-    setTimeout(()=>{ vg.style.boxShadow = 'inset 0 0 0 0 rgba(255,0,0,0)'; }, 220);
-    if(player.health <= 0){
-      loseGame();
-    }
-  }
-
-  function updateHealthUI(){
-    document.getElementById('healthBar').style.width = player.health + '%';
-    document.getElementById('healthText').textContent = player.health;
-  }
-
-  function shoot(){
-    if(!gameActive) return;
-    muzzleFlashMesh.material.opacity = 1;
-    muzzleLight.intensity = 3.5;
-    setTimeout(()=>{ muzzleFlashMesh.material.opacity = 0; muzzleLight.intensity = 0; }, 60);
-
-    raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-    const targets = [];
-    enemies.forEach(e=>{
-      if(e.alive){
-        e.mesh.children[0].children.forEach(child=> targets.push(child)); // torso + caps
-        targets.push(e.head);
-      }
-    });
-    const hits = raycaster.intersectObjects(targets, false);
-    const crosshair = document.getElementById('crosshair');
-    if(hits.length > 0){
-      const hitMesh = hits[0].object;
-      const enemy = enemies.find(e=> e.alive && (e.mesh.children[0].children.includes(hitMesh) || e.head === hitMesh));
-      if(enemy){
-        const headshot = hitMesh === enemy.head;
-        damageEnemy(enemy, headshot ? 40 : 18, headshot);
-        crosshair.classList.add('hit');
-        setTimeout(()=>crosshair.classList.remove('hit'), 100);
-        const flash = document.getElementById('hitmarkerFlash');
-        flash.style.opacity = headshot ? '0.6' : '0.3';
-        setTimeout(()=>{ flash.style.opacity = '0'; }, 90);
+        boss.phase = 'retreat'; boss.t = 0;
+        score += 2000;
       }
     }
   }
 
-  function updateMovement(dt){
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    forward.y = 0;
-    if(forward.lengthSq() > 0.0001) forward.normalize();
-    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  // 시각 효과: 확산 충격파 + 화면 플래시
+  const sh = new THREE.Mesh(shockGeo, new THREE.MeshBasicMaterial({color:0xfff3c9, transparent:true, opacity:0.55, wireframe:true}));
+  sh.position.copy(jet.position);
+  scene.add(sh);
+  shocks.push({ mesh: sh, t: 0 });
+  bombFlashEl.style.opacity = '0.85';
+  setTimeout(() => { bombFlashEl.style.opacity = '0'; }, 90);
+}
 
-    let fwdInput = 0, strafeInput = 0;
-    if(keys['KeyW']) fwdInput += 1;
-    if(keys['KeyS']) fwdInput -= 1;
-    if(keys['KeyD']) strafeInput += 1;
-    if(keys['KeyA']) strafeInput -= 1;
-    fwdInput += joystick.y;
-    strafeInput += joystick.x;
-    fwdInput = Math.max(-1, Math.min(1, fwdInput));
-    strafeInput = Math.max(-1, Math.min(1, strafeInput));
-
-    const move = new THREE.Vector3();
-    move.addScaledVector(forward, fwdInput);
-    move.addScaledVector(right, strafeInput);
-    if(move.lengthSq() > 0){
-      move.normalize().multiplyScalar(player.speed * dt);
-      camera.position.x += move.x;
-      camera.position.z += move.z;
-      camera.position.x = Math.max(-worldBounds+1, Math.min(worldBounds-1, camera.position.x));
-      camera.position.z = Math.max(-worldBounds+1, Math.min(worldBounds-1, camera.position.z));
-      bobPhase += dt * 11;
-      camera.position.y = player.height + Math.sin(bobPhase) * 0.045;
-      if(gunMesh) gunMesh.rotation.z = -strafeInput * 0.05 + Math.sin(bobPhase*2) * 0.01;
-    } else {
-      camera.position.y += (player.height - camera.position.y) * Math.min(1, dt*8);
-      if(gunMesh) gunMesh.rotation.z += (0 - gunMesh.rotation.z) * Math.min(1, dt*6);
+function updateShocks(dt){
+  for (let i = shocks.length - 1; i >= 0; i--){
+    const s = shocks[i];
+    s.t += dt;
+    const k = s.t / 0.5;
+    s.mesh.scale.setScalar(1 + k*30);
+    s.mesh.material.opacity = Math.max(0, 0.55*(1-k));
+    if (s.t > 0.5){
+      scene.remove(s.mesh);
+      shocks.splice(i, 1);
     }
   }
+}
 
-  // ---------- Controls ----------
-  function applyLookDelta(dx, dy, sensitivity){
-    yaw -= dx * sensitivity;
-    pitch -= dy * sensitivity;
-    pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
-  }
+const bombBtn = document.getElementById('bombBtn');
+const inp3 = {b:0};
+function setBombBtn(v){ inp3.b = v; bombBtn.classList.toggle('on', !!v); }
+bombBtn.onpointerdown = e => { e.preventDefault(); bombBtn.setPointerCapture?.(e.pointerId); setBombBtn(1); };
+bombBtn.onpointerup = bombBtn.onpointercancel = bombBtn.onpointerleave = () => setBombBtn(0);
 
-  function updateLookStick(dt){
-    if(lookStick.x === 0 && lookStick.y === 0) return;
-    const rate = 2.6; // max radians per second at full stick deflection
-    yaw -= lookStick.x * rate * dt;
-    pitch -= lookStick.y * rate * dt;
-    pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
-  }
+// ---------- 아이템 ----------
+const ITEM_TYPES = [
+  { kind:'power', color:0x8fe9ff },
+  { kind:'bomb',  color:0xffcf5a },
+];
+const items = []; // {mesh, kind, sway, swayOffset}
+let itemSpawnTimer = 0;
+const ITEM_SPAWN_GAP = 240;
 
-  function onMouseMove(e){
-    if(!isDragging) return;
-    applyLookDelta(e.clientX - dragLastX, e.clientY - dragLastY, 0.0032);
-    dragLastX = e.clientX;
-    dragLastY = e.clientY;
-  }
+function buildItemMesh(kind){
+  const t = ITEM_TYPES.find(x => x.kind === kind);
+  const mat = new THREE.MeshStandardMaterial({color:t.color, emissive:t.color, emissiveIntensity:1.2, flatShading:true});
+  return new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), mat);
+}
 
-  function setupControls(){
-    const canvas = renderer.domElement;
+function spawnItem(){
+  const kind = Math.random() < 0.6 ? 'power' : 'bomb';
+  const mesh = buildItemMesh(kind);
+  mesh.position.set((Math.random()-0.5)*10, Math.random()*3 - 0.5, MON_SPAWN_Z);
+  scene.add(mesh);
+  items.push({ mesh, kind, sway: 0.5 + Math.random()*0.5, swayOffset: Math.random()*10 });
+}
 
-    // Desktop: click-and-drag mouse look only (no fire on click)
-    canvas.addEventListener('mousedown', (e)=>{
-      if(e.button !== 0 || !gameActive) return;
-      isDragging = true;
-      dragLastX = e.clientX;
-      dragLastY = e.clientY;
-    });
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', ()=>{ isDragging = false; });
-    document.addEventListener('keydown', (e)=>{
-      keys[e.code] = true;
-      if(e.code === 'KeyE') shoot();
-    });
-    document.addEventListener('keyup', (e)=> keys[e.code] = false);
+function updateItems(dt){
+  itemSpawnTimer++;
+  if (itemSpawnTimer > ITEM_SPAWN_GAP){ spawnItem(); itemSpawnTimer = 0; }
 
-    if(isTouchDevice) setupMobileControls();
-  }
+  for (let i = items.length - 1; i >= 0; i--){
+    const it = items[i];
+    const me = it.mesh;
+    me.position.z += 0.14;
+    me.position.x += Math.sin(t*it.sway + it.swayOffset) * 0.02;
+    me.rotation.y += 0.04;
+    me.rotation.x += 0.02;
 
-  // ---------- Mobile touch controls ----------
-  const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-
-  function setupMobileControls(){
-    document.getElementById('mobileControls').classList.remove('hidden');
-
-    function bindStick(baseEl, knobEl, radius, onMove, onEnd){
-      let touchId = null;
-      baseEl.addEventListener('touchstart', (e)=>{
-        const t = e.changedTouches[0];
-        touchId = t.identifier;
-        e.preventDefault();
-      }, { passive:false });
-
-      document.addEventListener('touchmove', (e)=>{
-        for(const t of e.changedTouches){
-          if(t.identifier !== touchId) continue;
-          const rect = baseEl.getBoundingClientRect();
-          const cx = rect.left + rect.width/2;
-          const cy = rect.top + rect.height/2;
-          let dx = t.clientX - cx;
-          let dy = t.clientY - cy;
-          const dist = Math.min(radius, Math.hypot(dx, dy));
-          const angle = Math.atan2(dy, dx);
-          dx = Math.cos(angle) * dist;
-          dy = Math.sin(angle) * dist;
-          knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
-          onMove(dx / radius, dy / radius);
-        }
-      }, { passive:false });
-
-      document.addEventListener('touchend', (e)=>{
-        for(const t of e.changedTouches){
-          if(t.identifier !== touchId) continue;
-          touchId = null;
-          knobEl.style.transform = 'translate(0px, 0px)';
-          onEnd();
-        }
-      });
+    if (me.position.distanceTo(jet.position) < 1.3){
+      if (it.kind === 'power'){
+        weaponLevel = Math.min(3, weaponLevel + 1);
+        spawnBurst(me.position, 0x8fe9ff);
+      } else {
+        bombCharges = Math.min(BOMB_MAX, bombCharges + 1);
+        updateBombPips();
+        spawnBurst(me.position, 0xffcf5a);
+      }
+      scene.remove(me);
+      items.splice(i, 1);
+      continue;
     }
-
-    // Left stick: movement
-    bindStick(
-      document.getElementById('stickBase'),
-      document.getElementById('stickKnob'),
-      47,
-      (nx, ny)=>{ joystick.x = nx; joystick.y = -ny; },
-      ()=>{ joystick.x = 0; joystick.y = 0; }
-    );
-
-    // Right stick (C-stick): look/aim
-    bindStick(
-      document.getElementById('stickBaseR'),
-      document.getElementById('stickKnobR'),
-      47,
-      (nx, ny)=>{ lookStick.x = nx; lookStick.y = ny; },
-      ()=>{ lookStick.x = 0; lookStick.y = 0; }
-    );
-
-    document.getElementById('shootBtn').addEventListener('touchstart', (e)=>{
-      shoot();
-      e.preventDefault();
-      e.stopPropagation();
-    }, { passive:false });
-  }
-
-  // ---------- Game flow ----------
-  function startGame(){
-    initAudio();
-    document.getElementById('startScreen').classList.add('hidden');
-    document.getElementById('deathScreen').classList.add('hidden');
-    document.getElementById('winScreen').classList.add('hidden');
-    const cs = document.getElementById('cutscene');
-    cs.classList.remove('show');
-    cs.classList.add('hidden');
-
-    // reset state
-    enemies.forEach(e=> scene.remove(e.mesh));
-    enemies.length = 0;
-    player.health = 100;
-    score = 0;
-    wave = 1;
-    updateHealthUI();
-    document.getElementById('scoreText').textContent = 'SCORE 0';
-    camera.position.set(0, player.height, 8);
-    yaw = Math.PI; pitch = 0;
-    camera.rotation.order = 'YXZ';
-    camera.rotation.set(0, yaw, 0);
-
-    gameActive = false;
-    document.body.classList.add('playing');
-    showCutscene(STORY_BEATS[0].who, STORY_BEATS[0].text, ()=>{
-      gameActive = true;
-      beginWave(1);
-    }, 4500, STORY_BEATS[0].art);
-  }
-
-  function loseGame(){
-    gameActive = false;
-    document.body.classList.remove('playing');
-    isDragging = false;
-    document.getElementById('deathScreen').classList.remove('hidden');
-  }
-
-  function winGame(){
-    gameActive = false;
-    document.body.classList.remove('playing');
-    isDragging = false;
-    document.getElementById('winText').textContent = WIN_TEXT + '  최종 점수: ' + score;
-    document.getElementById('winScreen').classList.remove('hidden');
-  }
-
-  // ---------- Loop ----------
-  function animate(){
-    requestAnimationFrame(animate);
-    const now = performance.now();
-    const dt = Math.min(0.05, (now - lastTime)/1000);
-    lastTime = now;
-    if(gameActive){
-      updateLookStick(dt);
-      updateMovement(dt);
-      updateEnemies(dt);
+    if (me.position.z > MON_HIT_Z){
+      scene.remove(me);
+      items.splice(i, 1);
     }
-    updateParticles(dt);
-    updateDust(dt);
+  }
+}
+
+// ---------- 게임 루프 ----------
+let px = 0, py = 0;               // 전투기 논리 위치
+const bounds = {x:6.5, y:3.5};
+let bank = 0, pitch = 0;          // 기울기(롤/피치) 시각 효과
+let t = 0;
+
+function loop(){
+  t += 0.016;
+  updateStars();
+
+  if (!gameStarted){
     renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+    return;
   }
 
-  // ---------- Init ----------
-  initThree();
-  initCutsceneRenderer();
-  setupControls();
-  updateHealthUI();
-  animate();
+  let mx = inp.jx, my = inp.jy;
+  if (key['arrowleft']||key['a']) mx = -1;
+  if (key['arrowright']||key['d']) mx = 1;
+  if (key['arrowup']||key['w']) my = -1;
+  if (key['arrowdown']||key['s']) my = 1;
 
-  document.getElementById('startBtn').addEventListener('click', startGame);
-  document.getElementById('retryBtn').addEventListener('click', startGame);
-  document.getElementById('restartBtn').addEventListener('click', startGame);
+  if (!gameOver && !inEnding){
+    if (inp2.a || key[' ']) fireBolt();
+    if (inp3.b || key['b']) useBomb();
+    updateBolts(0.016);
+    updateMonsters(0.016);
+    updateItems(0.016);
+    maybeSpawnBoss();
+    updateBoss(0.016);
+    updateEnemyBolts(0.016);
+    updateBursts(0.016);
+    updateShocks(0.016);
+  } else {
+    mx = 0; my = 0;
+    if (inEnding){ updateBursts(0.016); updateShocks(0.016); } // 폭발 파편은 엔딩 중에도 계속 사그라들게
+  }
+  updateEnding(0.016);
+  updateHitFlash(0.016);
+  updateHud();
 
+  const speed = 0.14;
+  px += mx*speed; py -= my*speed;
+  px = Math.max(-bounds.x, Math.min(bounds.x, px));
+  py = Math.max(-bounds.y, Math.min(bounds.y, py));
+
+  jet.position.x += (px - jet.position.x) * 0.18;
+  jet.position.y += (py - jet.position.y) * 0.18;
+  jet.position.y += Math.sin(t*1.3)*0.05; // 살짝 부유감
+
+  // 조작 방향에 따른 기울기(롤/피치) — 입체감이 가장 크게 느껴지는 부분
+  bank  += (mx * -0.55 - bank) * 0.12;
+  pitch += (my * 0.28 - pitch) * 0.12;
+  jet.rotation.z = bank;
+  jet.rotation.x = pitch;
+  jet.rotation.y = Math.sin(t*0.6)*0.03;
+
+  // 엔진 트레일 갱신
+  const tp = trailGeo.attributes.position.array;
+  tp[trailIdx*3]   = jet.position.x + (Math.random()-0.5)*0.15;
+  tp[trailIdx*3+1] = jet.position.y - 0.1 + (Math.random()-0.5)*0.1;
+  tp[trailIdx*3+2] = jet.position.z - 1.9;
+  trailIdx = (trailIdx+1) % TRAIL_N;
+  trailGeo.attributes.position.needsUpdate = true;
+
+  camera.position.x += (jet.position.x*0.4 - (camera.position.x-0)) * 0.05;
+  camera.lookAt(jet.position.x*0.5, jet.position.y*0.5, -4);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+setStageBackground(stage);
+loop();
 })();
 </script>
 </body>
